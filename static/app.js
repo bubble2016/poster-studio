@@ -5,9 +5,20 @@
   currentUser: "",
   isGuest: true,
   guestRegisterTipShown: false,
+  holidayBgBackup: null,
+  holidayBgApplied: false,
+  logoCrop: null,
 };
 
 const $ = (id) => document.getElementById(id);
+const UPLOAD_PREVIEW_FIELDS = [
+  { key: "bg_image_path", thumbId: "bgThumb", wrapId: "bgThumbWrap" },
+  { key: "logo_image_path", thumbId: "logoThumb", wrapId: "logoThumbWrap" },
+  { key: "stamp_image_path", thumbId: "stampThumb", wrapId: "stampThumbWrap" },
+  { key: "qrcode_image_path", thumbId: "qrThumb", wrapId: "qrThumbWrap" },
+];
+const AVAILABLE_CARD_STYLES = new Set(["single", "stack", "block", "flip", "ticket", "double", "outline_pro", "outline"]);
+const BG_VARIANTS = ["bg-variant-a", "bg-variant-b", "bg-variant-c", "bg-variant-d", "bg-variant-e"];
 
 function getStats(text) {
   const chars = (text || "").replace(/\s/g, "").length;
@@ -33,13 +44,47 @@ function updateUserBadge() {
   if (!el) return;
   if (!state.currentUser) {
     el.textContent = "未登录";
+    syncSwitchUserButton();
     return;
   }
-  el.textContent = state.isGuest ? "访客" : `用户：${state.currentUser}`;
+  el.textContent = state.isGuest ? "访客" : `${state.currentUser}`;
+  syncSwitchUserButton();
+}
+
+function syncSwitchUserButton() {
+  const btn = $("switchUserBtn");
+  if (!btn) return;
+  if (state.currentUser && !state.isGuest) {
+    btn.setAttribute("aria-label", "退出登录");
+    btn.setAttribute("title", "退出登录");
+    btn.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M13 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6a1 1 0 1 1 0-2h5V5h-5a1 1 0 1 1 0-2Z"/>
+        <path d="M4 11h8.6l-2.3-2.3a1 1 0 0 1 1.4-1.4l4 4a1 1 0 0 1 0 1.4l-4 4a1 1 0 1 1-1.4-1.4l2.3-2.3H4a1 1 0 1 1 0-2Z"/>
+      </svg>
+    `;
+    return;
+  }
+  btn.setAttribute("aria-label", "登录");
+  btn.setAttribute("title", "登录");
+  btn.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M10.2 11.1a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2Zm0 1.8c-3.9 0-7.2 2-7.2 4.4 0 .5.4.9.9.9h8.7a6.7 6.7 0 0 1-.4-2.2c0-1.2.3-2.3 1-3.1h-3Z"/>
+      <path d="M20.7 16.1h-2v-2a1 1 0 1 0-2 0v2h-2a1 1 0 1 0 0 2h2v2a1 1 0 1 0 2 0v-2h2a1 1 0 1 0 0-2Z"/>
+    </svg>
+  `;
 }
 
 function withGuestHint(baseText) {
   return state.isGuest ? `${baseText}（访客模式，建议注册：可保存设置和内容）` : baseText;
+}
+
+function buildConfigPayloadForSave() {
+  const payload = { ...formConfig(), custom_templates: state.config.custom_templates || {} };
+  payload.last_title = $("titleInput").value.trim();
+  payload.last_date = $("dateInput").value.trim();
+  payload.last_content = $("contentInput").value;
+  return payload;
 }
 
 async function ensureLogin() {
@@ -132,6 +177,7 @@ function formConfig() {
     watermark_enabled: $("watermarkEnabled").checked,
     watermark_text: $("watermarkText").value,
     watermark_opacity: Number($("watermarkOpacity").value),
+    watermark_density: Number($("watermarkDensity").value),
     copy_mode: $("copyMode").value,
     export_format: $("exportFormat").value,
   };
@@ -143,7 +189,9 @@ function bindFromConfig(cfg) {
   $("contentInput").value = cfg.last_content || "";
 
   $("themeColor").value = cfg.theme_color || "#B22222";
-  $("cardStyle").value = cfg.card_style || "fold";
+  syncThemeColorUi($("themeColor").value);
+  const savedCardStyle = cfg.card_style === "soft" ? "outline_pro" : (cfg.card_style || "single");
+  $("cardStyle").value = AVAILABLE_CARD_STYLES.has(savedCardStyle) ? savedCardStyle : "single";
   $("shopName").value = cfg.shop_name || "";
   $("phone").value = cfg.phone || "";
   $("address").value = cfg.address || "";
@@ -155,10 +203,59 @@ function bindFromConfig(cfg) {
   $("watermarkEnabled").checked = !!cfg.watermark_enabled;
   $("watermarkText").value = cfg.watermark_text || "仅供客户参考";
   $("watermarkOpacity").value = cfg.watermark_opacity ?? 0.15;
+  $("watermarkDensity").value = cfg.watermark_density ?? 1.0;
   $("copyMode").value = cfg.copy_mode || "复制图片";
   $("exportFormat").value = cfg.export_format || "PNG";
+  syncUploadThumbsFromConfig(cfg);
 
   updateStats();
+}
+
+function normalizeHexColor(v) {
+  const m = String(v || "").trim().match(/^#([0-9a-fA-F]{6})$/);
+  return m ? `#${m[1].toUpperCase()}` : "";
+}
+
+function syncThemeColorUi(color) {
+  const hex = normalizeHexColor(color) || "#B22222";
+  const hexEl = $("themeColorHex");
+  if (hexEl) hexEl.textContent = hex;
+  document.querySelectorAll(".theme-swatch").forEach((btn) => {
+    btn.classList.toggle("is-active", normalizeHexColor(btn.dataset.color) === hex);
+  });
+}
+
+function toAssetUrl(path) {
+  if (!path) return "";
+  if (/^(data:|blob:|https?:\/\/)/i.test(path)) return path;
+  const safePath = String(path)
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+  return `/asset/${safePath}`;
+}
+
+function renderUploadThumb(key, path) {
+  const item = UPLOAD_PREVIEW_FIELDS.find((x) => x.key === key);
+  if (!item) return;
+  const img = $(item.thumbId);
+  const wrap = $(item.wrapId);
+  if (!img || !wrap) return;
+
+  if (!path) {
+    img.removeAttribute("src");
+    wrap.hidden = true;
+    return;
+  }
+
+  img.src = toAssetUrl(path);
+  wrap.hidden = false;
+}
+
+function syncUploadThumbsFromConfig(cfg) {
+  UPLOAD_PREVIEW_FIELDS.forEach((item) => {
+    renderUploadThumb(item.key, cfg[item.key]);
+  });
 }
 
 function applyTemplateByName(name) {
@@ -187,12 +284,28 @@ function shouldUseHolidayPreset(templateName, titleText) {
 }
 
 function applyHolidayPresetIfNeeded(templateName) {
-  if (!shouldUseHolidayPreset(templateName, $("titleInput").value)) return;
+  if (!shouldUseHolidayPreset(templateName, $("titleInput").value)) {
+    if (state.holidayBgApplied && state.holidayBgBackup) {
+      state.config.bg_mode = state.holidayBgBackup.bg_mode || "custom";
+      state.config.bg_image_path = state.holidayBgBackup.bg_image_path || "";
+      $("presetSelect").value = state.config.bg_mode === "preset" ? (state.config.bg_image_path || "") : "";
+    }
+    state.holidayBgApplied = false;
+    state.holidayBgBackup = null;
+    return;
+  }
   const holidayPath = getHolidayPresetPath();
   if (!holidayPath) return;
+  if (!state.holidayBgApplied) {
+    state.holidayBgBackup = {
+      bg_mode: state.config.bg_mode,
+      bg_image_path: state.config.bg_image_path,
+    };
+  }
   $("presetSelect").value = holidayPath;
   state.config.bg_mode = "preset";
   state.config.bg_image_path = holidayPath;
+  state.holidayBgApplied = true;
 }
 
 async function uploadFile(inputEl, key) {
@@ -204,6 +317,69 @@ async function uploadFile(inputEl, key) {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "上传失败");
   state.config[key] = data.path;
+  renderUploadThumb(key, data.path);
+}
+
+async function uploadBlob(blob, filename, key) {
+  const fd = new FormData();
+  fd.append("file", blob, filename);
+  const res = await fetch("/api/upload", { method: "POST", body: fd });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "上传失败");
+  state.config[key] = data.path;
+  renderUploadThumb(key, data.path);
+}
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+function closeLogoCropModal() {
+  $("logoCropModal").classList.add("hidden");
+  if ($("settingsModal").classList.contains("hidden")) {
+    document.body.classList.remove("no-scroll");
+  }
+  state.logoCrop = null;
+  $("logoUpload").value = "";
+}
+
+function renderLogoCropPreview() {
+  const crop = state.logoCrop;
+  if (!crop?.img) return;
+  const canvas = $("logoCropCanvas");
+  const ctx = canvas.getContext("2d");
+  const { img } = crop;
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+  const side = Math.min(iw, ih) / crop.scale;
+  const maxDx = Math.max(0, (iw - side) / 2);
+  const maxDy = Math.max(0, (ih - side) / 2);
+  const sx = clamp((iw - side) / 2 + maxDx * (crop.offsetX / 100), 0, iw - side);
+  const sy = clamp((ih - side) / 2 + maxDy * (crop.offsetY / 100), 0, ih - side);
+  crop.sx = sx;
+  crop.sy = sy;
+  crop.side = side;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, sx, sy, side, side, 0, 0, canvas.width, canvas.height);
+}
+
+function openLogoCropModal(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      state.logoCrop = { file, img, scale: 1, offsetX: 0, offsetY: 0, sx: 0, sy: 0, side: 0 };
+      $("logoCropScale").value = "1";
+      $("logoCropOffsetX").value = "0";
+      $("logoCropOffsetY").value = "0";
+      $("logoCropModal").classList.remove("hidden");
+      document.body.classList.add("no-scroll");
+      renderLogoCropPreview();
+    };
+    img.src = String(reader.result || "");
+  };
+  reader.readAsDataURL(file);
 }
 
 function setPreviewLoading(text = "正在生成预览...") {
@@ -242,7 +418,16 @@ function debounce(fn, delay = 500) {
   };
 }
 
+function applyRandomBackgroundVariant() {
+  const body = document.body;
+  if (!body) return;
+  BG_VARIANTS.forEach((cls) => body.classList.remove(cls));
+  const picked = BG_VARIANTS[Math.floor(Math.random() * BG_VARIANTS.length)];
+  body.classList.add(picked);
+}
+
 async function init() {
+  applyRandomBackgroundVariant();
   updateUserBadge();
   await ensureLogin();
   setPreviewLoading("正在生成预览...");
@@ -257,6 +442,17 @@ async function init() {
   state.presets = data.presets || [];
 
   bindFromConfig(state.config);
+
+  document.querySelectorAll(".theme-swatch").forEach((btn) => {
+    if (btn.dataset.color) btn.style.background = btn.dataset.color;
+    btn.addEventListener("click", () => {
+      const color = normalizeHexColor(btn.dataset.color);
+      if (!color) return;
+      $("themeColor").value = color;
+      syncThemeColorUi(color);
+      $("themeColor").dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  });
 
   const tplSel = $("templateSelect");
   tplSel.innerHTML = "";
@@ -286,22 +482,69 @@ async function init() {
     "shopName", "phone", "address", "slogan",
     "themeColor", "cardStyle", "bgBlur", "bgBrightness",
     "cardOpacity", "stampOpacity", "watermarkEnabled",
-    "watermarkText", "watermarkOpacity", "copyMode", "exportFormat",
+    "watermarkText", "watermarkOpacity", "watermarkDensity", "copyMode", "exportFormat",
   ];
 
   watchIds.forEach((id) => {
     $(id).addEventListener("input", onType);
     $(id).addEventListener("change", onType);
   });
+  $("themeColor").addEventListener("input", () => syncThemeColorUi($("themeColor").value));
+  $("themeColor").addEventListener("change", () => syncThemeColorUi($("themeColor").value));
 
   $("openSettingsBtn").addEventListener("click", openSettingsModal);
-  $("switchUserBtn")?.addEventListener("click", openLoginModal);
+  $("switchUserBtn")?.addEventListener("click", async () => {
+    if (state.currentUser && !state.isGuest) {
+      try {
+        // 退出前自动保存当前用户设置，避免下次登录需要重复配置。
+        state.config = buildConfigPayloadForSave();
+        await api("/api/config", "POST", state.config);
+      } catch (_) {}
+      await api("/api/logout", "POST");
+      location.reload();
+      return;
+    }
+    openLoginModal();
+  });
   $("closeSettingsBtn").addEventListener("click", closeSettingsModal);
   $("closeSettingsBtn2").addEventListener("click", closeSettingsModal);
   $("settingsMask").addEventListener("click", closeSettingsModal);
   $("closeLoginBtn").addEventListener("click", closeLoginModal);
   $("cancelLoginBtn").addEventListener("click", closeLoginModal);
   $("loginMask").addEventListener("click", closeLoginModal);
+  $("closeLogoCropBtn").addEventListener("click", closeLogoCropModal);
+  $("cancelLogoCropBtn").addEventListener("click", closeLogoCropModal);
+  $("logoCropMask").addEventListener("click", closeLogoCropModal);
+  $("logoCropScale").addEventListener("input", () => {
+    if (!state.logoCrop) return;
+    state.logoCrop.scale = Number($("logoCropScale").value) || 1;
+    renderLogoCropPreview();
+  });
+  $("logoCropOffsetX").addEventListener("input", () => {
+    if (!state.logoCrop) return;
+    state.logoCrop.offsetX = Number($("logoCropOffsetX").value) || 0;
+    renderLogoCropPreview();
+  });
+  $("logoCropOffsetY").addEventListener("input", () => {
+    if (!state.logoCrop) return;
+    state.logoCrop.offsetY = Number($("logoCropOffsetY").value) || 0;
+    renderLogoCropPreview();
+  });
+  $("confirmLogoCropBtn").addEventListener("click", async () => {
+    const crop = state.logoCrop;
+    if (!crop?.img) return;
+    const outSize = 640;
+    const out = document.createElement("canvas");
+    out.width = outSize;
+    out.height = outSize;
+    const ox = out.getContext("2d");
+    ox.drawImage(crop.img, crop.sx, crop.sy, crop.side, crop.side, 0, 0, outSize, outSize);
+    const blob = await new Promise((resolve) => out.toBlob(resolve, "image/png", 0.95));
+    if (!blob) return;
+    await uploadBlob(blob, "logo-crop.png", "logo_image_path");
+    closeLogoCropModal();
+    await refreshPreview();
+  });
   $("toggleLoginPwdBtn").addEventListener("click", () => {
     const input = $("loginPasswordInput");
     const isPwd = input.type === "password";
@@ -345,6 +588,10 @@ async function init() {
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (!$("logoCropModal").classList.contains("hidden")) {
+      closeLogoCropModal();
+      return;
+    }
     if (!$("loginModal").classList.contains("hidden")) {
       closeLoginModal();
       return;
@@ -360,6 +607,7 @@ async function init() {
       state.config.bg_mode = "preset";
       state.config.bg_image_path = path;
     }
+    renderUploadThumb("bg_image_path", state.config.bg_image_path || "");
     await refreshPreview();
   });
 
@@ -430,11 +678,7 @@ async function init() {
   });
 
   $("saveConfigBtn").addEventListener("click", async () => {
-    state.config = { ...formConfig(), custom_templates: state.config.custom_templates || {} };
-    state.config.last_title = $("titleInput").value.trim();
-    state.config.last_date = $("dateInput").value.trim();
-    state.config.last_content = $("contentInput").value;
-
+    state.config = buildConfigPayloadForSave();
     const d = await api("/api/config", "POST", state.config);
     state.config = d.config;
     $("statusText").textContent = withGuestHint("设置已保存");
@@ -442,7 +686,13 @@ async function init() {
     await refreshPreview();
   });
 
-  [["bgUpload", "bg_image_path", "custom"], ["logoUpload", "logo_image_path"], ["stampUpload", "stamp_image_path"], ["qrUpload", "qrcode_image_path"]].forEach(([id, key, mode]) => {
+  $("logoUpload").addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    openLogoCropModal(file);
+  });
+
+  [["bgUpload", "bg_image_path", "custom"], ["stampUpload", "stamp_image_path"], ["qrUpload", "qrcode_image_path"]].forEach(([id, key, mode]) => {
     $(id).addEventListener("change", async (e) => {
       await uploadFile(e.target, key);
       if (mode === "custom") state.config.bg_mode = "custom";
@@ -489,6 +739,7 @@ async function init() {
 init().catch((e) => {
   $("statusText").textContent = `初始化失败: ${e.message}`;
 });
+
 
 
 

@@ -134,6 +134,11 @@ def _load_user_config(user_id):
             picked = random.choice(presets)
             cfg["bg_mode"] = "preset"
             cfg["bg_image_path"] = _public_path(picked)
+    if _is_guest_user(user_id):
+        # 访客模式默认不展示站点素材，避免误用他人品牌元素。
+        cfg["logo_image_path"] = ""
+        cfg["stamp_image_path"] = ""
+        cfg["qrcode_image_path"] = ""
     save_config(user_path, cfg)
     return cfg
 
@@ -142,6 +147,14 @@ def _safe_join_data_path(relpath):
     abs_path = os.path.abspath(os.path.join(BASE_DIR, relpath))
     data_root = os.path.abspath(DATA_DIR)
     if abs_path == data_root or abs_path.startswith(data_root + os.sep):
+        return abs_path
+    return ""
+
+
+def _safe_join_base_path(relpath):
+    abs_path = os.path.abspath(os.path.join(BASE_DIR, relpath))
+    base_root = os.path.abspath(BASE_DIR)
+    if abs_path == base_root or abs_path.startswith(base_root + os.sep):
         return abs_path
     return ""
 
@@ -286,6 +299,25 @@ def api_download(relpath):
     if not os.path.isfile(abs_path):
         return jsonify({"error": "文件不存在"}), 404
     return send_file(abs_path, as_attachment=True)
+
+
+@app.get("/asset/<path:relpath>")
+def api_asset(relpath):
+    abs_path = _safe_join_base_path(relpath)
+    if not abs_path:
+        return jsonify({"error": "非法路径"}), 403
+
+    allowed_roots = [os.path.abspath(UPLOAD_DIR), os.path.abspath(os.path.join(BASE_DIR, "presets"))]
+    in_allowed = any(abs_path == root or abs_path.startswith(root + os.sep) for root in allowed_roots)
+    if not in_allowed:
+        return jsonify({"error": "不允许访问该资源"}), 403
+
+    ext = os.path.splitext(abs_path)[1].lower()
+    if ext not in {".png", ".jpg", ".jpeg", ".webp"}:
+        return jsonify({"error": "仅支持图片资源"}), 400
+    if not os.path.isfile(abs_path):
+        return jsonify({"error": "文件不存在"}), 404
+    return send_file(abs_path)
 
 
 @app.post("/api/config")

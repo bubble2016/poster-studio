@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=20260212c" />
+  <link rel="stylesheet" href="/static/style.css?v=20260212k" />
 </head>
 <body>
   <div class="bg-orb orb-a"></div>
@@ -22,8 +22,8 @@
         </div>
         <div class="brand-copy">
           <p class="brand-kicker">POSTER STUDIO</p>
-          <h1>包站公告发布系统</h1>
-          <p class="brand-meta">开发者：李学涛</p>
+          <h1>打包站公告发布工具</h1>
+          <p class="brand-meta">快捷的公告发布系统，专为打包站打造</p>
         </div>
       </div>
       <div class="topbar-actions">
@@ -126,7 +126,21 @@
         <section id="settingsPaneStyle" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="style" hidden>
           <div class="section-head"><h2>视觉风格</h2></div>
           <div class="field-grid">
-            <label>主题色<input id="themeColor" type="color" /></label>
+            <label class="theme-color-field">主题色
+              <div class="theme-color-row">
+                <input id="themeColor" type="color" />
+                <span id="themeColorHex" class="theme-color-hex">#B22222</span>
+              </div>
+              <div id="themePalette" class="theme-palette" aria-label="推荐主题色">
+                <button type="button" class="theme-swatch" data-color="#B22222" title="#B22222" aria-label="推荐色 #B22222"></button>
+                <button type="button" class="theme-swatch" data-color="#0B8F7A" title="#0B8F7A" aria-label="推荐色 #0B8F7A"></button>
+                <button type="button" class="theme-swatch" data-color="#2563EB" title="#2563EB" aria-label="推荐色 #2563EB"></button>
+                <button type="button" class="theme-swatch" data-color="#EA580C" title="#EA580C" aria-label="推荐色 #EA580C"></button>
+                <button type="button" class="theme-swatch" data-color="#BE123C" title="#BE123C" aria-label="推荐色 #BE123C"></button>
+                <button type="button" class="theme-swatch" data-color="#CA8A04" title="#CA8A04" aria-label="推荐色 #CA8A04"></button>
+                <button type="button" class="theme-swatch" data-color="#1D4ED8" title="#1D4ED8" aria-label="推荐色 #1D4ED8"></button>
+              </div>
+            </label>
             <label>卡片样式
               <select id="cardStyle">
                 <option value="single">单张</option>
@@ -135,8 +149,8 @@
                 <option value="flip">翻页</option>
                 <option value="ticket">票据</option>
                 <option value="double">双层</option>
-                <option value="sidebar">侧边强调</option>
-                <option value="fold">折页</option>
+                <option value="outline_pro">透视金属</option>
+                <option value="outline">棱边立体</option>
               </select>
             </label>
           </div>
@@ -148,16 +162,37 @@
 
         <section id="settingsPaneMedia" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="media" hidden>
           <div class="section-head"><h2>图片素材</h2></div>
+          <p>访客模式默认不显示 Logo。你可以在这里直接上传自己的包站 Logo、印章和二维码。</p>
           <label>背景预设
             <select id="presetSelect">
               <option value="">不使用预设</option>
             </select>
           </label>
-          <div class="field-grid">
-            <label>背景图<input id="bgUpload" type="file" accept="image/*" /></label>
-            <label>Logo<input id="logoUpload" type="file" accept="image/*" /></label>
-            <label>印章<input id="stampUpload" type="file" accept="image/*" /></label>
-            <label>二维码<input id="qrUpload" type="file" accept="image/*" /></label>
+          <div class="field-grid media-grid">
+            <label class="upload-field">背景图
+              <input id="bgUpload" type="file" accept="image/*" />
+              <div class="upload-thumb" id="bgThumbWrap" hidden>
+                <img id="bgThumb" alt="背景图缩略图" loading="lazy" />
+              </div>
+            </label>
+            <label class="upload-field">Logo
+              <input id="logoUpload" type="file" accept="image/*" />
+              <div class="upload-thumb" id="logoThumbWrap" hidden>
+                <img id="logoThumb" alt="Logo 缩略图" loading="lazy" />
+              </div>
+            </label>
+            <label class="upload-field">印章
+              <input id="stampUpload" type="file" accept="image/*" />
+              <div class="upload-thumb" id="stampThumbWrap" hidden>
+                <img id="stampThumb" alt="印章缩略图" loading="lazy" />
+              </div>
+            </label>
+            <label class="upload-field">二维码
+              <input id="qrUpload" type="file" accept="image/*" />
+              <div class="upload-thumb" id="qrThumbWrap" hidden>
+                <img id="qrThumb" alt="二维码缩略图" loading="lazy" />
+              </div>
+            </label>
           </div>
         </section>
 
@@ -168,6 +203,7 @@
           </label>
           <label>水印文字<input id="watermarkText" /></label>
           <label>水印透明度<input id="watermarkOpacity" type="range" min="0.05" max="0.5" step="0.05" /></label>
+          <label>水印密度<input id="watermarkDensity" type="range" min="0.5" max="2" step="0.1" /></label>
         </section>
       </div>
       <footer class="modal-actions">
@@ -203,9 +239,30 @@
     </section>
   </div>
 
+  <div id="logoCropModal" class="modal hidden" aria-hidden="true">
+    <div id="logoCropMask" class="modal-mask"></div>
+    <section class="modal-panel modal-panel-sm" role="dialog" aria-modal="true" aria-labelledby="logoCropTitle">
+      <header class="modal-head">
+        <h2 id="logoCropTitle">裁剪 Logo</h2>
+        <button id="closeLogoCropBtn" class="ghost-btn" type="button">关闭</button>
+      </header>
+      <div class="modal-body">
+        <p class="crop-tip">建议将主体放在中间，裁剪为正方形后会用于海报圆形 Logo。</p>
+        <canvas id="logoCropCanvas" width="320" height="320"></canvas>
+        <label>缩放<input id="logoCropScale" type="range" min="1" max="3" step="0.01" value="1" /></label>
+        <label>水平位置<input id="logoCropOffsetX" type="range" min="-100" max="100" step="1" value="0" /></label>
+        <label>垂直位置<input id="logoCropOffsetY" type="range" min="-100" max="100" step="1" value="0" /></label>
+      </div>
+      <footer class="modal-actions">
+        <button id="cancelLogoCropBtn" type="button">取消</button>
+        <button id="confirmLogoCropBtn" class="primary" type="button">确认裁剪</button>
+      </footer>
+    </section>
+  </div>
+
   <footer class="action-bar">
     <button id="generateBtn" class="primary pill-btn">生成</button>
   </footer>
-  <script src="/static/app.js?v=20260212b"></script>
+  <script src="/static/app.js?v=20260212k"></script>
 </body>
 </html>
