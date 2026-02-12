@@ -677,6 +677,7 @@ def draw_poster(content, date_str, title, cfg):
     theme_rgb = _hex_to_rgb(theme_hex)
     theme_deep = tuple(max(0, int(c * 0.72)) for c in theme_rgb)
     theme_soft = _mix_with_white(theme_rgb, 0.78)
+    theme_unit = _mix_with_white(theme_rgb, 0.62)
     row_bg_fixed = (249, 249, 249)
 
     if cfg.get("bg_mode") == "preset" and cfg.get("bg_image_path"):
@@ -900,8 +901,8 @@ def draw_poster(content, date_str, title, cfg):
             draw.text(
                 (cx + 60, cur + 30),
                 k.replace("【", "").replace("】", "").strip(),
-                font=get_label_font(43),
-                fill=("#F2D063" if is_crawl_style else theme_deep),
+                font=get_label_font(45),
+                fill=("#F2D063" if is_crawl_style else (48, 52, 58)),
                 anchor="lm",
             )
              
@@ -923,7 +924,7 @@ def draw_poster(content, date_str, title, cfg):
             if "元" in v:
                 val_pt, unit_pt = v.split("元", 1)
                 fu = get_font(30)
-                unit_color = "#D8BE68" if is_crawl_style else (c_val if c_val in {"#D32F2F", "#2E7D32"} else theme_soft)
+                unit_color = "#D8BE68" if is_crawl_style else (c_val if c_val in {"#D32F2F", "#2E7D32"} else theme_unit)
                 draw.text((rx, base_y), "元" + unit_pt.strip(), font=fu, fill=unit_color, anchor="rs")
                 uw = draw.textlength("元" + unit_pt.strip(), font=fu)
                 fv = get_num_font(65)
