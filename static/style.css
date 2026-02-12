@@ -13,6 +13,10 @@
 }
 
 * { box-sizing: border-box; }
+html, body {
+  width: 100%;
+  overflow-x: hidden;
+}
 body {
   margin: 0;
   --bg-layer-1: radial-gradient(1200px 600px at -10% -10%, #c9ece9, transparent);
@@ -69,7 +73,7 @@ body.bg-variant-e {
     linear-gradient(130deg, rgba(255, 255, 255, 0.92), rgba(248, 252, 255, 0.8)),
     linear-gradient(90deg, rgba(11, 143, 122, 0.1), rgba(241, 176, 125, 0.12));
   box-shadow: 0 14px 34px rgba(15, 23, 42, .08);
-  overflow: hidden;
+  overflow: visible;
 }
 .topbar::after {
   content: "";
@@ -124,19 +128,44 @@ body.bg-variant-e {
   position: relative;
   z-index: 1;
 }
-.user-badge {
-  display: inline-flex;
-  align-items: center;
-  height: 36px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid #c3d9e8;
-  background: rgba(255, 255, 255, .95);
-  color: #0c7a67;
-  font-size: .82rem;
+.settings-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  min-width: 188px;
+  padding: 8px;
+  border: 1px solid #c9dbeb;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff, #f2f7fe);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, .14);
+  display: grid;
+  gap: 6px;
+}
+.settings-menu[hidden] {
+  display: none;
+}
+.settings-menu-user {
+  margin: 0;
+  padding: 6px 8px;
+  color: #334155;
+  font-size: .8rem;
   font-weight: 600;
-  white-space: nowrap;
-  box-shadow: 0 4px 10px rgba(15, 23, 42, .06);
+  line-height: 1.35;
+}
+.settings-menu-item {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #d4dfeb;
+  border-radius: 10px;
+  background: #fff;
+  color: #0f172a;
+  font-size: .86rem;
+  text-align: left;
+}
+.settings-menu-item:hover {
+  background: #edf4fd;
 }
 .brand-copy h1 { margin: 0; font-family: Outfit, sans-serif; font-size: 1.36rem; letter-spacing: .3px; line-height: 1.12; }
 h2 { margin: 0; font-family: Outfit, sans-serif; font-size: 1.04rem; }
@@ -473,6 +502,7 @@ body.no-scroll { overflow: hidden; }
   bottom: 0;
   left: 0;
   right: 0;
+  z-index: 90;
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
@@ -494,9 +524,19 @@ body.no-scroll { overflow: hidden; }
 }
 .action-bar-note {
   margin: 0;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateY(4px);
+  transition: opacity .18s ease, transform .18s ease, max-height .18s ease;
   font-size: .78rem;
   color: rgba(15, 23, 42, .72);
   text-shadow: 0 1px 0 rgba(255, 255, 255, .7);
+}
+.action-bar-note.is-visible {
+  max-height: 24px;
+  opacity: 1;
+  transform: translateY(0);
 }
 .primary { background: linear-gradient(90deg, var(--primary-strong), var(--primary-soft)); color: #fff; border: none; }
 
@@ -519,7 +559,7 @@ body.no-scroll { overflow: hidden; }
 @media (min-width: 820px) {
   .app {
     max-width: 1320px;
-    padding: 16px 20px 122px;
+    padding: 16px 20px 28px;
   }
   .workspace {
     grid-template-columns: minmax(420px, 46%) minmax(520px, 54%);
@@ -532,6 +572,37 @@ body.no-scroll { overflow: hidden; }
   }
   .editor-col .card:last-child {
     margin-bottom: 0;
+  }
+  .editor-col .action-bar {
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    padding: 0;
+    margin-top: 2px;
+    align-items: stretch;
+    gap: 8px;
+    pointer-events: auto;
+  }
+  .editor-col .action-bar .pill-btn {
+    width: 100%;
+    max-width: none;
+    min-height: 48px;
+    border-radius: 14px;
+    box-shadow: 0 8px 16px rgba(var(--primary-rgb), .18);
+  }
+  .editor-col .action-bar-note {
+    text-align: center;
+  }
+}
+
+@media (max-width: 819px) {
+  .action-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 90;
   }
 }
 
@@ -608,13 +679,8 @@ body.no-scroll { overflow: hidden; }
     min-width: 44px;
     padding: 0;
   }
-  .user-badge {
-    flex: 0 0 auto;
-    font-size: .78rem;
-    padding: 0 8px;
-    max-width: 95px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .settings-menu {
+    width: min(220px, calc(100vw - 36px));
   }
 }
 
@@ -627,14 +693,14 @@ body.no-scroll { overflow: hidden; }
     grid-template-columns: 1fr 1fr;
   }
   .topbar {
-    flex-direction: column;
-    align-items: stretch;
+    align-items: center;
+    padding: 10px 12px;
   }
-  .topbar-actions {
-    width: 100%;
+  .brand-meta {
+    display: none;
   }
-  .user-badge {
-    margin-right: auto;
-    max-width: 56%;
+  .brand-copy h1 {
+    font-size: 1.08rem;
+    line-height: 1.16;
   }
 }

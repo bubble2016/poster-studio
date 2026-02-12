@@ -62,44 +62,73 @@ function setButtonBusy(btn, busy, busyText = "处理中...") {
 function showStatusError(msg) {
   $("statusText").textContent = msg || "操作失败，请重试";
 }
-function updateUserBadge() {
-  const el = $("userBadge");
-  if (!el) return;
-  if (!state.currentUser) {
-    el.textContent = "未登录";
-    syncSwitchUserButton();
-    return;
+function syncSettingsMenuUi() {
+  const userEl = $("settingsMenuUser");
+  const authBtn = $("settingsMenuAuthBtn");
+  const loggedIn = !!(state.currentUser && !state.isGuest);
+
+  if (userEl) {
+    if (!state.currentUser) {
+      userEl.textContent = "当前身份：未登录";
+    } else if (state.isGuest) {
+      userEl.textContent = "当前身份：访客";
+    } else {
+      userEl.textContent = `当前用户：${state.currentUser}`;
+    }
   }
-  el.textContent = state.isGuest ? "访客" : `${state.currentUser}`;
-  syncSwitchUserButton();
+
+  if (authBtn) {
+    authBtn.textContent = loggedIn ? "退出登录" : "登录 / 注册";
+  }
 }
 
-function syncSwitchUserButton() {
-  const btn = $("switchUserBtn");
-  if (!btn) return;
-  if (state.currentUser && !state.isGuest) {
-    btn.setAttribute("aria-label", "退出登录");
-    btn.setAttribute("title", "退出登录");
-    btn.innerHTML = `
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M13 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6a1 1 0 1 1 0-2h5V5h-5a1 1 0 1 1 0-2Z"/>
-        <path d="M4 11h8.6l-2.3-2.3a1 1 0 0 1 1.4-1.4l4 4a1 1 0 0 1 0 1.4l-4 4a1 1 0 1 1-1.4-1.4l2.3-2.3H4a1 1 0 1 1 0-2Z"/>
-      </svg>
-    `;
+function closeSettingsMenu() {
+  const menu = $("settingsMenu");
+  const btn = $("openSettingsBtn");
+  if (!menu || !btn) return;
+  menu.hidden = true;
+  btn.setAttribute("aria-expanded", "false");
+}
+
+function toggleSettingsMenu() {
+  const menu = $("settingsMenu");
+  const btn = $("openSettingsBtn");
+  if (!menu || !btn) return;
+  const nextOpen = !!menu.hidden;
+  menu.hidden = !nextOpen;
+  btn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+}
+
+async function handleSettingsMenuAuthAction() {
+  const loggedIn = !!(state.currentUser && !state.isGuest);
+  closeSettingsMenu();
+  if (!loggedIn) {
+    openLoginModal();
     return;
   }
-  btn.setAttribute("aria-label", "登录");
-  btn.setAttribute("title", "登录");
-  btn.innerHTML = `
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M10.2 11.1a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2Zm0 1.8c-3.9 0-7.2 2-7.2 4.4 0 .5.4.9.9.9h8.7a6.7 6.7 0 0 1-.4-2.2c0-1.2.3-2.3 1-3.1h-3Z"/>
-      <path d="M20.7 16.1h-2v-2a1 1 0 1 0-2 0v2h-2a1 1 0 1 0 0 2h2v2a1 1 0 1 0 2 0v-2h2a1 1 0 1 0 0-2Z"/>
-    </svg>
-  `;
+  try {
+    // 退出前自动保存当前用户设置，避免下次登录需要重复配置。
+    state.config = buildConfigPayloadForSave();
+    await api("/api/config", "POST", state.config);
+  } catch (_) {}
+  try {
+    await api("/api/logout", "POST");
+    location.reload();
+  } catch (e) {
+    showStatusError(e.message || "退出登录失败");
+  }
 }
 
 function withGuestHint(baseText) {
   return state.isGuest ? `${baseText}（访客模式，建议注册：可保存设置和内容）` : baseText;
+}
+
+function syncFooterNoteVisibility() {
+  const note = $("actionBarNote");
+  if (!note) return;
+  const doc = document.documentElement;
+  const remain = Math.max(0, doc.scrollHeight - (window.scrollY + window.innerHeight));
+  note.classList.toggle("is-visible", remain <= 24);
 }
 
 function buildConfigPayloadForSave() {
@@ -114,7 +143,7 @@ async function ensureLogin() {
   const me = await api("/api/me");
   state.currentUser = me.display_user_id || me.user_id || "";
   state.isGuest = !!me.is_guest;
-  updateUserBadge();
+  syncSettingsMenuUi();
 }
 
 function switchSettingsTab(tab) {
@@ -146,6 +175,7 @@ function syncSettingsPaneHeight() {
 }
 
 function openSettingsModal() {
+  closeSettingsMenu();
   $("settingsModal").classList.remove("hidden");
   document.body.classList.add("no-scroll");
   switchSettingsTab("base");
@@ -574,7 +604,7 @@ function applyRandomBackgroundVariant() {
 
 async function init() {
   applyRandomBackgroundVariant();
-  updateUserBadge();
+  syncSettingsMenuUi();
   await ensureLogin();
   bindLogoCropDrag();
   setPreviewLoading("正在生成预览...");
@@ -639,23 +669,18 @@ async function init() {
   $("themeColor").addEventListener("input", () => syncThemeColorUi($("themeColor").value));
   $("themeColor").addEventListener("change", () => syncThemeColorUi($("themeColor").value));
 
-  $("openSettingsBtn").addEventListener("click", openSettingsModal);
-  $("switchUserBtn")?.addEventListener("click", async () => {
-    if (state.currentUser && !state.isGuest) {
-      try {
-        // 退出前自动保存当前用户设置，避免下次登录需要重复配置。
-        state.config = buildConfigPayloadForSave();
-        await api("/api/config", "POST", state.config);
-      } catch (_) {}
-      try {
-        await api("/api/logout", "POST");
-        location.reload();
-      } catch (e) {
-        showStatusError(e.message || "退出登录失败");
-      }
-      return;
-    }
-    openLoginModal();
+  $("openSettingsBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleSettingsMenu();
+  });
+  $("settingsMenuPanelBtn").addEventListener("click", openSettingsModal);
+  $("settingsMenuAuthBtn").addEventListener("click", handleSettingsMenuAuthAction);
+  document.addEventListener("click", (e) => {
+    const menu = $("settingsMenu");
+    const btn = $("openSettingsBtn");
+    if (!menu || menu.hidden) return;
+    if (menu.contains(e.target) || btn?.contains(e.target)) return;
+    closeSettingsMenu();
   });
   $("closeSettingsBtn").addEventListener("click", closeSettingsModal);
   $("closeSettingsBtn2").addEventListener("click", closeSettingsModal);
@@ -715,7 +740,7 @@ async function init() {
       const d = await api("/api/login", "POST", { user_id: userId, password, merge_from_current: true });
       state.currentUser = d.display_user_id || d.user_id || userId;
       state.isGuest = !!d.is_guest;
-      updateUserBadge();
+      syncSettingsMenuUi();
       location.reload();
     } catch (e) {
       setLoginError(e.message || "登录失败");
@@ -734,9 +759,16 @@ async function init() {
   });
 
   window.addEventListener("resize", debounce(syncSettingsPaneHeight, 120));
+  window.addEventListener("resize", syncFooterNoteVisibility);
+  window.addEventListener("scroll", syncFooterNoteVisibility, { passive: true });
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    const menu = $("settingsMenu");
+    if (menu && !menu.hidden) {
+      closeSettingsMenu();
+      return;
+    }
     if (!$("logoCropModal").classList.contains("hidden")) {
       closeLogoCropModal();
       return;
@@ -937,6 +969,7 @@ async function init() {
 
   await refreshPreview();
   syncSettingsPaneHeight();
+  syncFooterNoteVisibility();
 }
 
 init().catch((e) => {
