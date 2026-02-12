@@ -24,52 +24,65 @@ def _candidate_cjk_fonts():
     local_regular = [
         os.path.join(BASE_DIR, "fonts", "SourceHanSansSC-Regular.otf"),
         os.path.join(BASE_DIR, "fonts", "NotoSansSC-Regular.otf"),
+        os.path.join(BASE_DIR, "fonts", "MicrosoftYaHei.ttc"),
     ]
     local_bold = [
         os.path.join(BASE_DIR, "fonts", "SourceHanSansSC-Bold.otf"),
         os.path.join(BASE_DIR, "fonts", "NotoSansSC-Bold.otf"),
+        os.path.join(BASE_DIR, "fonts", "MicrosoftYaHei.ttc"),
     ]
-
-    if os.name == "nt":
-        win = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
-        return {
-            "regular": local_regular + [
-                os.path.join(win, "msyh.ttc"),
-                os.path.join(win, "msyh.ttf"),
-                os.path.join(win, "simsun.ttc"),
-                os.path.join(win, "simhei.ttf"),
-                os.path.join(win, "simfang.ttf"),
-            ],
-            "bold": local_bold + [
-                os.path.join(win, "msyhbd.ttc"),
-                os.path.join(win, "msyhbd.ttf"),
-                os.path.join(win, "simhei.ttf"),
-                os.path.join(win, "msyh.ttc"),
-            ],
-        }
-    if os.name == "posix":
-        return {
-            "regular": local_regular + [
-                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
-                "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-                "/usr/share/fonts/truetype/arphic/uming.ttc",
-                "/System/Library/Fonts/PingFang.ttc",
-            ],
-            "bold": local_bold + [
-                "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-                "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Bold.otf",
-                "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-                "/System/Library/Fonts/PingFang.ttc",
-            ],
-        }
     return {"regular": local_regular, "bold": local_bold}
 
 
 _font_candidates = _candidate_cjk_fonts()
-FONT_CN_REG = _existing_path([os.getenv("POSTER_FONT_CN_REG", "")] + _font_candidates["regular"])
-FONT_CN_BOLD = _existing_path([os.getenv("POSTER_FONT_CN_BOLD", "")] + _font_candidates["bold"] + _font_candidates["regular"])
-FONT_NUM = _existing_path([os.getenv("POSTER_FONT_NUM", ""), FONT_CN_BOLD, FONT_CN_REG])
+FONT_CN_REG = _existing_path(_font_candidates["regular"])
+FONT_CN_BOLD = _existing_path(_font_candidates["bold"] + _font_candidates["regular"])
+FONT_CN_MED = _existing_path(
+    [
+        os.path.join(BASE_DIR, "fonts", "SourceHanSansSC-Medium.otf"),
+        os.path.join(BASE_DIR, "fonts", "NotoSansSC-Medium.otf"),
+        os.path.join(BASE_DIR, "fonts", "MicrosoftYaHei.ttc"),
+        FONT_CN_REG,
+        FONT_CN_BOLD,
+    ]
+)
+FONT_NUM_AMETHYST = _existing_path(
+    [
+        os.path.join(BASE_DIR, "fonts", "Bahnschrift.ttf"),
+        os.path.join(BASE_DIR, "fonts", "MicrosoftYaHei.ttc"),
+        FONT_CN_BOLD,
+        FONT_CN_MED,
+        FONT_CN_REG,
+    ]
+)
+FONT_NUM_PLUM = _existing_path(
+    [
+        os.path.join(BASE_DIR, "fonts", "Bahnschrift.ttf"),
+        os.path.join(BASE_DIR, "fonts", "MicrosoftYaHei.ttc"),
+        FONT_CN_BOLD,
+        FONT_CN_MED,
+        FONT_CN_REG,
+    ]
+)
+FONT_NUM_INDIGO = _existing_path(
+    [
+        os.path.join(BASE_DIR, "fonts", "Bahnschrift.ttf"),
+        os.path.join(BASE_DIR, "fonts", "MicrosoftYaHei.ttc"),
+        FONT_CN_BOLD,
+        FONT_CN_MED,
+        FONT_CN_REG,
+    ]
+)
+FONT_NUM = _existing_path(
+    [
+        FONT_NUM_AMETHYST,
+        FONT_NUM_PLUM,
+        FONT_NUM_INDIGO,
+        FONT_CN_BOLD,
+        FONT_CN_MED,
+        FONT_CN_REG,
+    ]
+)
 DEFAULT_FOOTER = "温馨提示：\n1. 严禁掺杂兑假，发现永久拒收\n2. 过磅数据记录最长保留 24 天"
 SYSTEM_TEMPLATES = {
     "报价模板": (
@@ -103,9 +116,10 @@ DEFAULT_CONFIG = {
     "bg_blur_radius": 30,
     "bg_brightness": 1.0,
     "card_opacity": 1.0,
-    "card_style": "fold",
+    "card_style": "single",
     "theme_color": "#B22222",
     "copy_mode": "复制图片",
+    "price_style": "amethyst",
     "last_content": "",
     "last_date": "",
     "last_title": "调价通知",
@@ -115,6 +129,12 @@ DEFAULT_CONFIG = {
     "watermark_enabled": False,
     "watermark_text": "仅供客户参考",
     "watermark_opacity": 0.15,
+}
+
+PRICE_STYLES = {
+    "amethyst": {"font": FONT_NUM_AMETHYST, "color": "#5B3FA8", "unit_color": "#6D57B5"},
+    "plum": {"font": FONT_NUM_PLUM, "color": "#6A2C91", "unit_color": "#7A48A2"},
+    "indigo": {"font": FONT_NUM_INDIGO, "color": "#3F4DB8", "unit_color": "#5F6AD1"},
 }
 
 
@@ -322,27 +342,41 @@ class PresetGenerator:
         return PresetGenerator._add_noise(img, 0.035)
 
     @staticmethod
-    def gen_obsidian_grid():
+    def gen_noir_depth():
         w, h = CANVAS_SIZE
-        img = Image.new("RGB", (w, h), "#12161F")
-        noise = Image.effect_noise((w, h), 28).convert("RGB")
-        img = ImageChops.blend(img, noise, 0.12)
+        base_top = (14, 18, 24)
+        base_bottom = (5, 7, 10)
+        img = Image.new("RGB", (w, h), base_top)
+        draw = ImageDraw.Draw(img)
+        for y in range(h):
+            t = y / max(1, h - 1)
+            r = int(base_top[0] + (base_bottom[0] - base_top[0]) * t)
+            g = int(base_top[1] + (base_bottom[1] - base_top[1]) * t)
+            b = int(base_top[2] + (base_bottom[2] - base_top[2]) * t)
+            draw.line([(0, y), (w, y)], fill=(r, g, b))
 
-        grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        gd = ImageDraw.Draw(grid)
-        line_color = (155, 174, 204, 30)
-        for x in range(0, w, 72):
-            gd.line([(x, 0), (x, h)], fill=line_color, width=1)
-        for y in range(0, h, 72):
-            gd.line([(0, y), (w, y)], fill=line_color, width=1)
-        for _ in range(6):
-            x = random.randint(100, w - 100)
-            y = random.randint(120, h - 120)
-            r = random.randint(110, 220)
-            gd.ellipse((x - r, y - r, x + r, y + r), outline=(110, 132, 170, 34), width=2)
-        grid = grid.filter(ImageFilter.GaussianBlur(1))
-        img = Image.alpha_composite(img.convert("RGBA"), grid).convert("RGB")
-        return PresetGenerator._add_noise(img, 0.025)
+        glow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(glow)
+        gd.ellipse((int(-w * 0.2), int(h * 0.05), int(w * 0.62), int(h * 0.9)), fill=(64, 96, 132, 66))
+        gd.ellipse((int(w * 0.42), int(-h * 0.18), int(w * 1.2), int(h * 0.62)), fill=(52, 72, 102, 54))
+        for _ in range(18):
+            x = random.randint(-200, w + 120)
+            y = random.randint(0, h)
+            ln = random.randint(280, 640)
+            gd.line([(x, y), (x + ln, y + random.randint(-38, 38))], fill=(190, 210, 235, random.randint(8, 18)), width=1)
+        glow = glow.filter(ImageFilter.GaussianBlur(18))
+
+        vignette = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        vd = ImageDraw.Draw(vignette)
+        vd.rectangle((0, 0, w, h), fill=(0, 0, 0, 46))
+        for i in range(56):
+            a = int(3 + i * 1.25)
+            vd.rounded_rectangle([(i * 8, i * 8), (w - i * 8, h - i * 8)], radius=120, outline=(0, 0, 0, min(150, a)), width=2)
+        vignette = vignette.filter(ImageFilter.GaussianBlur(14))
+
+        img = Image.alpha_composite(img.convert("RGBA"), glow)
+        img = Image.alpha_composite(img, vignette).convert("RGB")
+        return PresetGenerator._add_noise(img, 0.05)
 
     @staticmethod
     def get_presets(base_dir):
@@ -354,7 +388,7 @@ class PresetGenerator:
             ("preset_misty_green.png", "晨雾森林绿", PresetGenerator.gen_misty_green),
             ("preset_neon_city.png", "霓虹赛博夜", PresetGenerator.gen_neon_city),
             ("preset_sunset_amber.png", "落日琥珀橙", PresetGenerator.gen_sunset_amber),
-            ("preset_obsidian_grid.png", "曜石网格黑", PresetGenerator.gen_obsidian_grid),
+            ("preset_noir_depth.png", "深空曜黑", PresetGenerator.gen_noir_depth),
             ("preset_mountain_morning.png", "山岚晨光", PresetGenerator.gen_mountain_morning),
             ("preset_aurora_cyan.png", "极光青域", PresetGenerator.gen_aurora_cyan),
         ]
@@ -390,6 +424,30 @@ def format_date_input(value):
             y = f"20{y}"
         return f"{y}年{m}月{d}日"
     return value.strip()
+
+
+def normalize_date_for_render(value):
+    text = (value or "").strip()
+    if not text:
+        return datetime.datetime.now().strftime("%Y年%m月%d日")
+    fixed = format_date_input(text)
+    out = fixed if fixed else text
+    if "?" not in out and "？" not in out:
+        return out
+
+    nums = re.findall(r"\d+", out)
+    if len(nums) >= 3:
+        y, m, d = nums[0], nums[1], nums[2]
+    else:
+        compact = "".join(re.findall(r"\d", out))
+        if len(compact) >= 8:
+            y, m, d = compact[:4], compact[4:6], compact[6:8]
+        else:
+            return out.replace("?", "").replace("？", "")
+    try:
+        return f"{int(y):04d}年{int(m):02d}月{int(d):02d}日"
+    except Exception:
+        return out.replace("?", "").replace("？", "")
 
 
 def normalize_content_for_render(content):
@@ -499,7 +557,9 @@ def draw_poster(content, date_str, title, cfg):
     img = base.convert("RGBA")
 
     get_font = lambda size, bold=False: FontManager.get(FONT_CN_BOLD if bold else FONT_CN_REG, size)
-    get_num_font = lambda size: FontManager.get(FONT_NUM, size)
+    get_med_font = lambda size: FontManager.get(FONT_CN_MED, size)
+    price_style = PRICE_STYLES.get(cfg.get("price_style", "amethyst"), PRICE_STYLES["amethyst"])
+    get_num_font = lambda size: FontManager.get(price_style.get("font") or FONT_NUM, size)
     cw = 920
     cx = (w - cw) // 2
     lines = (content or "").split("\n")
@@ -536,9 +596,13 @@ def draw_poster(content, date_str, title, cfg):
     cy = (h - ch) // 2
     footer_start_y = cy + 500 + sim_y - 10
 
-    style = cfg.get("card_style", "fold")
+    style = cfg.get("card_style", "single")
+    # 兼容旧配置：已下线样式统一回退为单张。
+    if style in {"fold", "sidebar"}:
+        style = "single"
     alpha = int(float(cfg.get("card_opacity", 1.0)) * 255)
     card = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    flip_overlay = None
     dc = ImageDraw.Draw(card)
     if style == "ticket":
         dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=20, fill=(255, 255, 255, alpha))
@@ -550,9 +614,6 @@ def draw_poster(content, date_str, title, cfg):
         img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(20)))
         dc.rounded_rectangle([(cx + 20, cy + 20), (cx + cw + 20, cy + ch + 20)], radius=40, fill=(235, 235, 235, alpha))
         dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=40, fill=(255, 255, 255, alpha))
-    elif style == "sidebar":
-        dc.rectangle([(cx, cy), (cx + cw, cy + ch)], fill=(255, 255, 255, alpha))
-        dc.rectangle([(cx, cy), (cx + 25, cy + ch)], fill=cfg.get("theme_color", "#B22222"))
     elif style == "block":
         for i in range(12, 0, -1):
             ImageDraw.Draw(card).rounded_rectangle([(cx + i, cy + i), (cx + cw + i, cy + ch + i)], radius=40, fill=(230, 230, 230, alpha))
@@ -561,12 +622,93 @@ def draw_poster(content, date_str, title, cfg):
         dc.rounded_rectangle([(cx + 12, cy + 22), (cx + cw - 12, cy + ch + 22)], radius=35, fill=(245, 245, 245, alpha))
         dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=40, fill=(255, 255, 255, alpha))
     elif style == "flip":
+        shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        ImageDraw.Draw(shadow).rounded_rectangle([(cx + 14, cy + 18), (cx + cw + 14, cy + ch + 18)], radius=42, fill=(0, 0, 0, 55))
+        img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(16)))
         dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=40, fill=(255, 255, 255, alpha))
-        fs = 200
-        dc.polygon([(cx + cw, cy + ch), (cx + cw, cy + ch - fs), (cx + cw - fs, cy + ch)], fill=(240, 240, 240, 255))
+        fs = 210
+        fold = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        fd = ImageDraw.Draw(fold)
+        # 折角正面：亮面
+        fd.polygon([(cx + cw, cy + ch), (cx + cw, cy + ch - fs), (cx + cw - fs, cy + ch)], fill=(248, 248, 248, min(255, alpha + 12)))
+        # 折角背面：更暗，形成纸张厚度感
+        inner = int(fs * 0.56)
+        fd.polygon([(cx + cw, cy + ch), (cx + cw, cy + ch - inner), (cx + cw - inner, cy + ch)], fill=(224, 224, 224, 236))
+        # 折痕
+        fd.line([(cx + cw - fs, cy + ch), (cx + cw, cy + ch - fs)], fill=(194, 194, 194, 208), width=3)
+        # 折角渐变细节
+        for i in range(fs):
+            t = i / max(1, fs - 1)
+            shade = int(250 - 36 * t)
+            a = int(90 * (1 - t))
+            fd.line([(cx + cw - i, cy + ch), (cx + cw, cy + ch - i)], fill=(shade, shade, shade, a), width=1)
+        # 折角在卡片上的投影
+        for i in range(28):
+            a = int(34 * (1 - i / 28))
+            fd.line(
+                [(cx + cw - fs - 10 + i, cy + ch - 2), (cx + cw - 2, cy + ch - fs - 10 + i)],
+                fill=(120, 120, 120, a),
+                width=2,
+            )
+        flip_overlay = fold.filter(ImageFilter.GaussianBlur(0.6))
+    elif style == "soft":
+        depth = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        dd = ImageDraw.Draw(depth)
+        for i in range(24, 0, -1):
+            a = int(10 + i * 2.6)
+            dd.rounded_rectangle(
+                [(cx + i, cy + i + 4), (cx + cw + i, cy + ch + i + 4)],
+                radius=46,
+                fill=(22, 30, 45, a),
+            )
+        img = Image.alpha_composite(img, depth.filter(ImageFilter.GaussianBlur(16)))
+        dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=42, fill=(255, 255, 255, alpha))
+
+        bevel = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        bd = ImageDraw.Draw(bevel)
+        for i in range(22):
+            a = int(44 * (1 - i / 22))
+            bd.rounded_rectangle(
+                [(cx + 8 + i, cy + 8 + i), (cx + cw - 8 - i, cy + int(ch * 0.28) - i)],
+                radius=max(10, 34 - i),
+                outline=(255, 255, 255, a),
+                width=1,
+            )
+        for i in range(20):
+            a = int(38 * (1 - i / 20))
+            bd.line([(cx + cw - 22 + i, cy + 48), (cx + cw - 22 + i, cy + ch - 48)], fill=(58, 70, 86, a), width=1)
+            bd.line([(cx + 48, cy + ch - 22 + i), (cx + cw - 48, cy + ch - 22 + i)], fill=(58, 70, 86, a), width=1)
+        flip_overlay = bevel.filter(ImageFilter.GaussianBlur(0.8))
+    elif style == "outline":
+        shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        sd = ImageDraw.Draw(shadow)
+        sd.rounded_rectangle([(cx + 18, cy + 24), (cx + cw + 18, cy + ch + 24)], radius=40, fill=(0, 0, 0, 64))
+        img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(18)))
+
+        dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=34, fill=(255, 255, 255, alpha))
+        border_c = cfg.get("theme_color", "#B22222")
+        dc.rounded_rectangle([(cx + 8, cy + 8), (cx + cw - 8, cy + ch - 8)], radius=30, outline=border_c, width=4)
+
+        facet = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        fd = ImageDraw.Draw(facet)
+        for i in range(16):
+            a = int(56 * (1 - i / 16))
+            fd.rounded_rectangle(
+                [(cx + 14 + i, cy + 14 + i), (cx + cw - 14 - i, cy + ch - 14 - i)],
+                radius=max(10, 26 - i // 2),
+                outline=(255, 255, 255, a),
+                width=1,
+            )
+        for i in range(24):
+            a = int(42 * (1 - i / 24))
+            fd.line([(cx + cw - 28 + i, cy + 38), (cx + cw - 28 + i, cy + ch - 38)], fill=(30, 42, 60, a), width=1)
+            fd.line([(cx + 38, cy + ch - 28 + i), (cx + cw - 38, cy + ch - 28 + i)], fill=(30, 42, 60, a), width=1)
+        flip_overlay = facet.filter(ImageFilter.GaussianBlur(0.8))
     else:
         dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=15, fill=(255, 255, 255, alpha))
     img = Image.alpha_composite(img, card)
+    if flip_overlay is not None:
+        img = Image.alpha_composite(img, flip_overlay)
     draw = ImageDraw.Draw(img)
 
     logo = _load_image(cfg.get("logo_image_path"))
@@ -581,7 +723,7 @@ def draw_poster(content, date_str, title, cfg):
     cur = cy + 190
     draw.text((w // 2, cur), title or "调价通知", font=get_font(75, True), fill="black", anchor="mt")
     cur += 100
-    draw.text((w // 2, cur), date_str or datetime.datetime.now().strftime("%Y年%m月%d日"), font=get_font(35), fill="gray", anchor="mt")
+    draw.text((w // 2, cur), normalize_date_for_render(date_str), font=get_font(35), fill="gray", anchor="mt")
     cur += 60
     draw.line([(cx + 50, cur), (cx + cw - 50, cur)], fill="#F0F0F0", width=3)
     cur += 40
@@ -598,13 +740,14 @@ def draw_poster(content, date_str, title, cfg):
             if row_idx % 2 == 0:
                 draw.rectangle([(cx + 20, cur - 10), (cx + cw - 20, cur + 70)], fill="#F9F9F9")
             k, v = line.replace("：", ":").split(":", 1)
-            draw.text((cx + 60, cur + 30), k.replace("【", "").replace("】", "").strip(), font=get_font(45, True), fill="#333", anchor="lm")
-            c_val = "#D32F2F" if any(x in v for x in ["上调", "涨"]) else "#2E7D32" if any(x in v for x in ["下调", "跌", "降"]) else theme_c
+            draw.text((cx + 60, cur + 30), k.replace("【", "").replace("】", "").strip(), font=get_med_font(43), fill="#2F2F2F", anchor="lm")
+            c_val = "#D32F2F" if any(x in v for x in ["上调", "涨"]) else "#2E7D32" if any(x in v for x in ["下调", "跌", "降"]) else price_style["color"]
             base_y, rx = cur + 53, cx + cw - 60
             if "元" in v:
                 val_pt, unit_pt = v.split("元", 1)
                 fu = get_font(30)
-                draw.text((rx, base_y), "元" + unit_pt.strip(), font=fu, fill=c_val, anchor="rs")
+                unit_color = c_val if c_val in {"#D32F2F", "#2E7D32"} else price_style["unit_color"]
+                draw.text((rx, base_y), "元" + unit_pt.strip(), font=fu, fill=unit_color, anchor="rs")
                 uw = draw.textlength("元" + unit_pt.strip(), font=fu)
                 fv = get_num_font(65)
                 if any("\u4e00" <= c <= "\u9fff" for c in val_pt):
