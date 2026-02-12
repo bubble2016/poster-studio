@@ -1,0 +1,205 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>包站公告发布系统 Web</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css?v=20260212b" />
+</head>
+<body>
+  <div class="bg-orb orb-a"></div>
+  <div class="bg-orb orb-b"></div>
+
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <h1>包站公告发布系统</h1>
+        <p>开发者：李学涛</p>
+      </div>
+      <div class="topbar-actions">
+        <span id="userBadge" class="user-badge">未登录</span>
+        <button id="switchUserBtn" class="ghost-btn icon-btn" aria-label="登录" title="登录" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M10.2 11.1a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2Zm0 1.8c-3.9 0-7.2 2-7.2 4.4 0 .5.4.9.9.9h8.7a6.7 6.7 0 0 1-.4-2.2c0-1.2.3-2.3 1-3.1h-3Z"/>
+            <path d="M20.7 16.1h-2v-2a1 1 0 1 0-2 0v2h-2a1 1 0 1 0 0 2h2v2a1 1 0 1 0 2 0v-2h2a1 1 0 1 0 0-2Z"/>
+          </svg>
+        </button>
+        <button id="openSettingsBtn" class="ghost-btn icon-btn" aria-label="设置" title="设置" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 13.5v-3l-2-.6a6.8 6.8 0 0 0-.7-1.8l1-1.9-2.1-2.1-1.9 1a6.8 6.8 0 0 0-1.8-.7L12 2h-3l-.6 2a6.8 6.8 0 0 0-1.8.7l-1.9-1L2.6 5.8l1 1.9a6.8 6.8 0 0 0-.7 1.8l-2 .6v3l2 .6c.1.6.4 1.2.7 1.8l-1 1.9 2.1 2.1 1.9-1c.6.3 1.2.6 1.8.7l.6 2h3l.6-2c.6-.1 1.2-.4 1.8-.7l1.9 1 2.1-2.1-1-1.9c.3-.6.6-1.2.7-1.8l2-.6Zm-9.5 1.5A3 3 0 1 1 13.5 12a3 3 0 0 1-3 3Z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <section class="card preview-card">
+        <div class="section-head">
+          <h2>实时预览</h2>
+          <span id="statusText">准备就绪</span>
+        </div>
+        <div id="previewStage" class="preview-stage is-loading">
+          <div id="previewPlaceholder" class="preview-placeholder">正在生成预览...</div>
+          <img id="previewImage" alt="海报预览" />
+        </div>
+      </section>
+
+      <section class="editor-col">
+        <section class="card form-card">
+          <div class="field-grid">
+            <label>标题<input id="titleInput" /></label>
+            <label>日期<input id="dateInput" placeholder="今天 / 2026-02-11" /></label>
+          </div>
+          <div class="row">
+            <button class="mini-btn" id="todayBtn">今天</button>
+            <button class="mini-btn" id="tomorrowBtn">+1 天</button>
+            <button class="mini-btn" id="formatBtn">自动格式化</button>
+            <button class="mini-btn" id="batchBtn">批量调价</button>
+          </div>
+          <label>内容<textarea id="contentInput" rows="10"></textarea></label>
+          <div class="stats" id="statsText">0 字 · 0 行</div>
+        </section>
+
+        <section class="card">
+          <div class="section-head"><h2>模板管理</h2></div>
+          <div class="field-grid">
+            <label>模板
+              <select id="templateSelect"></select>
+            </label>
+            <label>导出格式
+              <select id="exportFormat">
+                <option>PNG</option>
+                <option>JPEG</option>
+                <option>PDF</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
+            <button class="mini-btn" id="saveTemplateBtn">保存模板</button>
+            <button class="mini-btn danger" id="deleteTemplateBtn">删除模板</button>
+          </div>
+        </section>
+      </section>
+    </div>
+  </main>
+
+  <div id="settingsModal" class="modal hidden" aria-hidden="true">
+    <div id="settingsMask" class="modal-mask"></div>
+    <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <header class="modal-head">
+        <h2 id="settingsTitle">全局设置</h2>
+        <button id="closeSettingsBtn" class="ghost-btn">关闭</button>
+      </header>
+      <div class="modal-body">
+        <div class="settings-tabs" role="tablist" aria-label="设置分组">
+          <button class="settings-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="settingsPaneBase" data-settings-tab="base">基础信息</button>
+          <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPaneStyle" data-settings-tab="style">视觉风格</button>
+          <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPaneMedia" data-settings-tab="media">图片素材</button>
+          <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPaneParam" data-settings-tab="param">参数调整</button>
+        </div>
+
+        <section id="settingsPaneBase" class="card modal-card settings-pane is-active" role="tabpanel" data-settings-pane="base">
+          <div class="section-head"><h2>基础信息</h2></div>
+          <label>店铺名称<input id="shopName" /></label>
+          <label>联系电话<input id="phone" /></label>
+          <label>地址<input id="address" /></label>
+          <label>标语<input id="slogan" /></label>
+          <label>生成后操作
+            <select id="copyMode">
+              <option>复制图片</option>
+              <option>复制文案</option>
+              <option>仅打开文件</option>
+            </select>
+          </label>
+        </section>
+
+        <section id="settingsPaneStyle" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="style" hidden>
+          <div class="section-head"><h2>视觉风格</h2></div>
+          <div class="field-grid">
+            <label>主题色<input id="themeColor" type="color" /></label>
+            <label>卡片样式
+              <select id="cardStyle">
+                <option value="single">单张</option>
+                <option value="stack">堆叠</option>
+                <option value="block">3D立体</option>
+                <option value="flip">翻页</option>
+                <option value="ticket">票据</option>
+                <option value="double">双层</option>
+                <option value="sidebar">侧边强调</option>
+                <option value="fold">折页</option>
+              </select>
+            </label>
+          </div>
+          <label>背景模糊 <input id="bgBlur" type="range" min="0" max="30" step="1" /></label>
+          <label>背景亮度 <input id="bgBrightness" type="range" min="0.5" max="1.5" step="0.05" /></label>
+          <label>卡片透明度<input id="cardOpacity" type="range" min="0.1" max="1" step="0.05" /></label>
+          <label>印章透明度<input id="stampOpacity" type="range" min="0.1" max="1" step="0.05" /></label>
+        </section>
+
+        <section id="settingsPaneMedia" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="media" hidden>
+          <div class="section-head"><h2>图片素材</h2></div>
+          <label>背景预设
+            <select id="presetSelect">
+              <option value="">不使用预设</option>
+            </select>
+          </label>
+          <div class="field-grid">
+            <label>背景图<input id="bgUpload" type="file" accept="image/*" /></label>
+            <label>Logo<input id="logoUpload" type="file" accept="image/*" /></label>
+            <label>印章<input id="stampUpload" type="file" accept="image/*" /></label>
+            <label>二维码<input id="qrUpload" type="file" accept="image/*" /></label>
+          </div>
+        </section>
+
+        <section id="settingsPaneParam" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="param" hidden>
+          <div class="section-head"><h2>参数调整</h2></div>
+          <label class="switch-line">
+            <input id="watermarkEnabled" type="checkbox" /> 启用水印
+          </label>
+          <label>水印文字<input id="watermarkText" /></label>
+          <label>水印透明度<input id="watermarkOpacity" type="range" min="0.05" max="0.5" step="0.05" /></label>
+        </section>
+      </div>
+      <footer class="modal-actions">
+        <button id="closeSettingsBtn2">取消</button>
+        <button id="saveConfigBtn" class="primary">保存设置</button>
+      </footer>
+    </section>
+  </div>
+
+  <div id="loginModal" class="modal hidden" aria-hidden="true">
+    <div id="loginMask" class="modal-mask"></div>
+    <section class="modal-panel modal-panel-sm" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+      <header class="modal-head">
+        <h2 id="loginTitle">用户登录</h2>
+        <button id="closeLoginBtn" class="ghost-btn" type="button">关闭</button>
+      </header>
+      <div class="modal-body">
+        <label>用户ID
+          <input id="loginUserIdInput" placeholder="仅支持字母/数字/_/-" autocomplete="username" />
+        </label>
+        <label>密码
+          <div class="password-row">
+            <input id="loginPasswordInput" type="password" placeholder="至少 4 位" autocomplete="current-password" />
+            <button id="toggleLoginPwdBtn" class="ghost-btn" type="button">显示</button>
+          </div>
+        </label>
+        <div id="loginErrorText" class="form-error" aria-live="polite"></div>
+      </div>
+      <footer class="modal-actions">
+        <button id="cancelLoginBtn" type="button">取消</button>
+        <button id="confirmLoginBtn" class="primary" type="button">登录/创建</button>
+      </footer>
+    </section>
+  </div>
+
+  <footer class="action-bar">
+    <button id="previewBtn">刷新预览</button>
+    <button id="generateBtn" class="primary">生成并下载</button>
+  </footer>
+  <script src="/static/app.js?v=20260212a"></script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+{
+  "shop_name": "云泽西关打包站",
+  "shop_name_hist": [
+    "云泽西关打包站"
+  ],
+  "address": "古城区中山大道六和辅路东侧100米院内",
+  "address_hist": [
+    "古城区中山大道六和辅路东侧100米院内"
+  ],
+  "phone": "13826495317",
+  "phone_hist": [
+    "13826495317"
+  ],
+  "slogan": "诚信经营 · 现金结算 · 假货勿扰",
+  "slogan_hist": [
+    "诚信经营 · 现金结算 · 假货勿扰"
+  ],
+  "bg_image_path": "presets/preset_fluid_blue.png",
+  "bg_mode": "preset",
+  "logo_image_path": "web_data/uploads/fe38f56383444dedaeffab13a609841c.png",
+  "qrcode_image_path": "",
+  "stamp_image_path": "",
+  "stamp_opacity": 0.85,
+  "bg_blur_radius": 30,
+  "bg_brightness": 1,
+  "card_opacity": 1,
+  "card_style": "stack",
+  "theme_color": "#b22222",
+  "copy_mode": "复制图片",
+  "last_content": "【工厂黄板】：1350 元/吨\n【手选黄板】：1300 元/吨\n【统货花纸】：800-900 元/吨\n【统货书本】：1300 元/吨\n【优质书本】：1330 元/吨\n【精选报纸】：1800-1900 元/吨\n\n温馨提示：\n1. 严禁掺杂兑假，发现永久拒收\n2. 过磅数据记录最长保存14天",
+  "last_date": "2026年02月11日",
+  "last_title": "调价通知",
+  "custom_templates": {},
+  "export_format": "PNG",
+  "jpeg_quality": 95,
+  "watermark_enabled": false,
+  "watermark_text": "仅供客户参考",
+  "watermark_opacity": 0.15
+}
