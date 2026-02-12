@@ -247,11 +247,9 @@
         <button id="closeLogoCropBtn" class="ghost-btn" type="button">关闭</button>
       </header>
       <div class="modal-body">
-        <p class="crop-tip">建议将主体放在中间，裁剪为正方形后会用于海报圆形 Logo。</p>
+        <p class="crop-tip">用手指直接拖动预览区域即可移动裁剪位置，建议将主体放在中间。</p>
         <canvas id="logoCropCanvas" width="320" height="320"></canvas>
         <label>缩放<input id="logoCropScale" type="range" min="1" max="3" step="0.01" value="1" /></label>
-        <label>水平位置<input id="logoCropOffsetX" type="range" min="-100" max="100" step="1" value="0" /></label>
-        <label>垂直位置<input id="logoCropOffsetY" type="range" min="-100" max="100" step="1" value="0" /></label>
       </div>
       <footer class="modal-actions">
         <button id="cancelLogoCropBtn" type="button">取消</button>
@@ -262,6 +260,7 @@
 
   <footer class="action-bar">
     <button id="generateBtn" class="primary pill-btn">生成</button>
+    <p class="action-bar-note">© 2026 开发者：李学涛</p>
   </footer>
   <script src="/static/app.js?v=20260212k"></script>
 </body>

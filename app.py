@@ -26,7 +26,10 @@ from poster_engine import (
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "web_data")
+DATA_DIR = os.environ.get("POSTER_DATA_DIR", os.path.join(BASE_DIR, "web_data"))
+if not os.path.isabs(DATA_DIR):
+    DATA_DIR = os.path.join(BASE_DIR, DATA_DIR)
+DATA_DIR = os.path.abspath(DATA_DIR)
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 OUTPUT_DIR = os.path.join(DATA_DIR, "outputs")
 USER_CONFIG_DIR = os.path.join(DATA_DIR, "user_configs")

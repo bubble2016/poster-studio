@@ -784,12 +784,15 @@ def draw_poster(content, date_str, title, cfg):
 
     logo = _load_image(cfg.get("logo_image_path"))
     if logo:
-        logo = ImageOps.fit(logo, (180, 180), method=Image.Resampling.LANCZOS)
-        mask = Image.new("L", (180, 180), 0)
-        ImageDraw.Draw(mask).ellipse((0, 0, 180, 180), fill=255)
-        ly, lx = cy + 60, (w - 180) // 2
-        draw.ellipse((lx - 5, int(ly - 90) - 5, lx + 185, int(ly + 90) + 5), fill="white")
-        img.paste(logo, (lx, int(ly - 90)), mask)
+        logo_size = 198
+        logo_half = logo_size // 2
+        ring_pad = 6
+        logo = ImageOps.fit(logo, (logo_size, logo_size), method=Image.Resampling.LANCZOS)
+        mask = Image.new("L", (logo_size, logo_size), 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, logo_size, logo_size), fill=255)
+        ly, lx = cy + 60, (w - logo_size) // 2
+        draw.ellipse((lx - ring_pad, int(ly - logo_half) - ring_pad, lx + logo_size + ring_pad, int(ly + logo_half) + ring_pad), fill="white")
+        img.paste(logo, (lx, int(ly - logo_half)), mask)
 
     cur = cy + 190
     draw.text((w // 2, cur), title or "调价通知", font=get_font(75, True), fill=("#F8D84A" if is_crawl_style else "black"), anchor="mt")

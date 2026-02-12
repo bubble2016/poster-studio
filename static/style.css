@@ -48,7 +48,7 @@ body.bg-variant-e {
 .orb-a { width: 220px; height: 220px; background: #62d0c0; top: -40px; left: -60px; }
 .orb-b { width: 280px; height: 280px; background: #f1b07d; right: -110px; top: 18vh; }
 
-.app { padding: 14px 14px 90px; max-width: 680px; margin: 0 auto; }
+.app { padding: 14px 14px 112px; max-width: 680px; margin: 0 auto; }
 .workspace { display: grid; gap: 12px; }
 .editor-col { min-width: 0; }
 .topbar {
@@ -451,6 +451,11 @@ select:focus-visible {
   border: 1px solid #d7e3ef;
   border-radius: 12px;
   background: linear-gradient(135deg, #f8fbff, #eef3fb);
+  touch-action: none;
+  cursor: grab;
+}
+#logoCropCanvas.is-dragging {
+  cursor: grabbing;
 }
 body.no-scroll { overflow: hidden; }
 
@@ -461,6 +466,8 @@ body.no-scroll { overflow: hidden; }
   right: 0;
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
   display: flex;
+  flex-direction: column;
+  gap: 6px;
   justify-content: center;
   align-items: center;
   background: transparent;
@@ -475,6 +482,12 @@ body.no-scroll { overflow: hidden; }
   letter-spacing: .02em;
   box-shadow: 0 12px 24px rgba(8, 127, 109, .24);
   pointer-events: auto;
+}
+.action-bar-note {
+  margin: 0;
+  font-size: .78rem;
+  color: rgba(15, 23, 42, .72);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .7);
 }
 .primary { background: linear-gradient(90deg, #087f6d, #0aa386); color: #fff; border: none; }
 
@@ -497,7 +510,7 @@ body.no-scroll { overflow: hidden; }
 @media (min-width: 820px) {
   .app {
     max-width: 1320px;
-    padding: 16px 20px 96px;
+    padding: 16px 20px 122px;
   }
   .workspace {
     grid-template-columns: minmax(420px, 46%) minmax(520px, 54%);

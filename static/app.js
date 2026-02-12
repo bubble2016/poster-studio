@@ -362,6 +362,72 @@ function renderLogoCropPreview() {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, sx, sy, side, side, 0, 0, canvas.width, canvas.height);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(15, 23, 42, 0.35)";
+  ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+}
+
+function bindLogoCropDrag() {
+  const canvas = $("logoCropCanvas");
+  if (!canvas) return;
+
+  const stopDragging = () => {
+    if (!state.logoCrop) return;
+    state.logoCrop.dragging = false;
+    canvas.classList.remove("is-dragging");
+  };
+
+  canvas.addEventListener("pointerdown", (e) => {
+    const crop = state.logoCrop;
+    if (!crop?.img) return;
+    crop.dragging = true;
+    crop.dragPointerId = e.pointerId;
+    crop.lastClientX = e.clientX;
+    crop.lastClientY = e.clientY;
+    canvas.classList.add("is-dragging");
+    canvas.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  canvas.addEventListener("pointermove", (e) => {
+    const crop = state.logoCrop;
+    if (!crop?.img || !crop.dragging) return;
+    const dx = e.clientX - crop.lastClientX;
+    const dy = e.clientY - crop.lastClientY;
+    crop.lastClientX = e.clientX;
+    crop.lastClientY = e.clientY;
+
+    const iw = crop.img.naturalWidth || crop.img.width;
+    const ih = crop.img.naturalHeight || crop.img.height;
+    const side = Math.min(iw, ih) / crop.scale;
+    const maxDx = Math.max(0, (iw - side) / 2);
+    const maxDy = Math.max(0, (ih - side) / 2);
+    const cw = canvas.clientWidth || canvas.width;
+    const ch = canvas.clientHeight || canvas.height;
+
+    if (maxDx > 0 && cw > 0) {
+      const sourceDx = (dx / cw) * side;
+      const offsetDx = (sourceDx / maxDx) * 100;
+      crop.offsetX = clamp(crop.offsetX + offsetDx, -100, 100);
+    }
+    if (maxDy > 0 && ch > 0) {
+      const sourceDy = (dy / ch) * side;
+      const offsetDy = (sourceDy / maxDy) * 100;
+      crop.offsetY = clamp(crop.offsetY + offsetDy, -100, 100);
+    }
+    renderLogoCropPreview();
+    e.preventDefault();
+  });
+
+  canvas.addEventListener("pointerup", (e) => {
+    if (state.logoCrop?.dragPointerId === e.pointerId) {
+      stopDragging();
+    }
+  });
+  canvas.addEventListener("pointercancel", stopDragging);
+  canvas.addEventListener("pointerleave", () => {
+    if (state.logoCrop?.dragging) stopDragging();
+  });
 }
 
 function openLogoCropModal(file) {
@@ -371,8 +437,6 @@ function openLogoCropModal(file) {
     img.onload = () => {
       state.logoCrop = { file, img, scale: 1, offsetX: 0, offsetY: 0, sx: 0, sy: 0, side: 0 };
       $("logoCropScale").value = "1";
-      $("logoCropOffsetX").value = "0";
-      $("logoCropOffsetY").value = "0";
       $("logoCropModal").classList.remove("hidden");
       document.body.classList.add("no-scroll");
       renderLogoCropPreview();
@@ -430,6 +494,7 @@ async function init() {
   applyRandomBackgroundVariant();
   updateUserBadge();
   await ensureLogin();
+  bindLogoCropDrag();
   setPreviewLoading("正在生成预览...");
   $("previewImage").addEventListener("load", setPreviewLoaded);
   $("previewImage").addEventListener("error", () => {
@@ -518,16 +583,6 @@ async function init() {
   $("logoCropScale").addEventListener("input", () => {
     if (!state.logoCrop) return;
     state.logoCrop.scale = Number($("logoCropScale").value) || 1;
-    renderLogoCropPreview();
-  });
-  $("logoCropOffsetX").addEventListener("input", () => {
-    if (!state.logoCrop) return;
-    state.logoCrop.offsetX = Number($("logoCropOffsetX").value) || 0;
-    renderLogoCropPreview();
-  });
-  $("logoCropOffsetY").addEventListener("input", () => {
-    if (!state.logoCrop) return;
-    state.logoCrop.offsetY = Number($("logoCropOffsetY").value) || 0;
     renderLogoCropPreview();
   });
   $("confirmLogoCropBtn").addEventListener("click", async () => {
