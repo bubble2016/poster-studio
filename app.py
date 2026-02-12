@@ -151,6 +151,14 @@ def index():
     return render_template("index.html")
 
 
+@app.get("/favicon.ico")
+def favicon():
+    icon_path = os.path.join(BASE_DIR, "logo.ico")
+    if not os.path.isfile(icon_path):
+        return "", 404
+    return send_file(icon_path, mimetype="image/x-icon")
+
+
 @app.get("/api/me")
 def api_me():
     uid = _ensure_user_id()
