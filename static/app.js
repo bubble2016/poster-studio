@@ -373,8 +373,6 @@ async function init() {
     await refreshPreview();
   });
 
-  $("previewBtn").addEventListener("click", refreshPreview);
-
   $("formatBtn").addEventListener("click", async () => {
     const d = await api("/api/format", "POST", { content: $("contentInput").value });
     $("contentInput").value = d.content;

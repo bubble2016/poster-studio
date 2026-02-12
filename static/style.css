@@ -344,11 +344,26 @@ select:focus-visible {
 body.no-scroll { overflow: hidden; }
 
 .action-bar {
-  position: fixed; bottom: 0; left: 0; right: 0;
-  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
-  display: grid; grid-template-columns: 1fr 1.2fr; gap: 10px;
-  background: rgba(245,247,251,.9); backdrop-filter: blur(10px);
-  border-top: 1px solid var(--stroke);
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: transparent;
+  pointer-events: none;
+}
+.action-bar .pill-btn {
+  width: min(300px, calc(100vw - 96px));
+  min-height: 50px;
+  border-radius: 999px;
+  font-size: 1.06rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  box-shadow: 0 12px 24px rgba(8, 127, 109, .24);
+  pointer-events: auto;
 }
 .primary { background: linear-gradient(90deg, #087f6d, #0aa386); color: #fff; border: none; }
 
@@ -401,6 +416,11 @@ body.no-scroll { overflow: hidden; }
     min-width: 0;
     justify-content: center;
     padding: 8px 10px;
+  }
+  .action-bar .pill-btn {
+    width: min(240px, calc(100vw - 120px));
+    min-height: 46px;
+    font-size: 1rem;
   }
   .topbar {
     gap: 10px;

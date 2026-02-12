@@ -201,6 +201,69 @@ class PresetGenerator:
         return ImageChops.blend(img, noise, 0.15)
 
     @staticmethod
+    def gen_mountain_morning():
+        w, h = CANVAS_SIZE
+        sky_top = (218, 238, 255)
+        sky_bottom = (240, 249, 255)
+        img = Image.new("RGB", (w, h), sky_top)
+        draw = ImageDraw.Draw(img)
+        for y in range(h):
+            t = y / max(1, h - 1)
+            r = int(sky_top[0] + (sky_bottom[0] - sky_top[0]) * t)
+            g = int(sky_top[1] + (sky_bottom[1] - sky_top[1]) * t)
+            b = int(sky_top[2] + (sky_bottom[2] - sky_top[2]) * t)
+            draw.line([(0, y), (w, y)], fill=(r, g, b))
+
+        mist = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        md = ImageDraw.Draw(mist)
+        layers = [
+            (h * 0.56, (162, 188, 214, 120), 220),
+            (h * 0.67, (141, 172, 199, 140), 260),
+            (h * 0.78, (122, 155, 184, 155), 320),
+        ]
+        for y_base, color, amp in layers:
+            points = [(0, int(y_base))]
+            for x in range(0, w + 120, 120):
+                y = int(y_base + random.randint(-amp // 12, amp // 12))
+                points.append((x, y))
+            points += [(w, h), (0, h)]
+            md.polygon(points, fill=color)
+
+        for _ in range(12):
+            x = random.randint(-60, w + 60)
+            y = random.randint(int(h * 0.18), int(h * 0.68))
+            r = random.randint(120, 240)
+            md.ellipse((x - r, y - r // 2, x + r, y + r // 2), fill=(255, 255, 255, random.randint(22, 45)))
+
+        mist = mist.filter(ImageFilter.GaussianBlur(18))
+        img = Image.alpha_composite(img.convert("RGBA"), mist).convert("RGB")
+        return PresetGenerator._add_noise(img, 0.03)
+
+    @staticmethod
+    def gen_aurora_cyan():
+        w, h = CANVAS_SIZE
+        blobs = [
+            (w * 0.1, h * 0.22, 520, (10, 46, 92)),
+            (w * 0.78, h * 0.18, 460, (25, 102, 168)),
+            (w * 0.28, h * 0.72, 500, (8, 132, 145)),
+            (w * 0.88, h * 0.82, 540, (24, 72, 124)),
+        ]
+        base = PresetGenerator._gen_fluid_base(w, h, "#07162A", blobs)
+
+        aurora = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        ad = ImageDraw.Draw(aurora)
+        for _ in range(8):
+            x0 = random.randint(-200, w // 3)
+            x1 = random.randint(w * 2 // 3, w + 200)
+            y0 = random.randint(40, h // 2)
+            y1 = y0 + random.randint(240, 520)
+            col = random.choice([(96, 255, 226, 54), (35, 203, 255, 52), (132, 255, 186, 42)])
+            ad.ellipse((x0, y0, x1, y1), outline=col, width=random.randint(6, 12))
+        aurora = aurora.filter(ImageFilter.GaussianBlur(22))
+        img = Image.alpha_composite(base.convert("RGBA"), aurora).convert("RGB")
+        return PresetGenerator._add_noise(img, 0.04)
+
+    @staticmethod
     def gen_neon_city():
         w, h = CANVAS_SIZE
         blobs = [
@@ -288,12 +351,12 @@ class PresetGenerator:
         presets = [
             ("preset_luxury_red.png", "鎏金故宫红", PresetGenerator.gen_luxury_red),
             ("preset_fluid_blue.png", "深海流体蓝", PresetGenerator.gen_fluid_blue),
-            ("preset_frosted_grey.png", "钛金磨砂灰", PresetGenerator.gen_frosted_grey),
             ("preset_misty_green.png", "晨雾森林绿", PresetGenerator.gen_misty_green),
-            ("preset_kraft_pro.png", "粗纹牛皮纸", PresetGenerator.gen_kraft_pro),
             ("preset_neon_city.png", "霓虹赛博夜", PresetGenerator.gen_neon_city),
             ("preset_sunset_amber.png", "落日琥珀橙", PresetGenerator.gen_sunset_amber),
             ("preset_obsidian_grid.png", "曜石网格黑", PresetGenerator.gen_obsidian_grid),
+            ("preset_mountain_morning.png", "山岚晨光", PresetGenerator.gen_mountain_morning),
+            ("preset_aurora_cyan.png", "极光青域", PresetGenerator.gen_aurora_cyan),
         ]
         out = {}
         for filename, name, fn in presets:
