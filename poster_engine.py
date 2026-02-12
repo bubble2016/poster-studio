@@ -25,11 +25,15 @@ def _candidate_cjk_fonts():
         os.path.join(BASE_DIR, "fonts", "SourceHanSansSC-Regular.otf"),
         os.path.join(BASE_DIR, "fonts", "NotoSansSC-Regular.otf"),
         os.path.join(BASE_DIR, "fonts", "MicrosoftYaHei.ttc"),
+        os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts", "msyh.ttc"),
+        os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts", "simhei.ttf"),
     ]
     local_bold = [
         os.path.join(BASE_DIR, "fonts", "SourceHanSansSC-Bold.otf"),
         os.path.join(BASE_DIR, "fonts", "NotoSansSC-Bold.otf"),
         os.path.join(BASE_DIR, "fonts", "MicrosoftYaHei.ttc"),
+        os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts", "msyhbd.ttc"),
+        os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts", "msyh.ttc"),
     ]
     return {"regular": local_regular, "bold": local_bold}
 
@@ -127,6 +131,7 @@ DEFAULT_CONFIG = {
     "card_opacity": 1.0,
     "card_style": "single",
     "theme_color": "#B22222",
+    "price_color_mode": "semantic",
     "copy_mode": "复制图片",
     "price_style": "amethyst",
     "last_content": "",
@@ -146,6 +151,28 @@ PRICE_STYLES = {
     "plum": {"font": FONT_NUM_PLUM, "color": "#6A2C91", "unit_color": "#7A48A2"},
     "indigo": {"font": FONT_NUM_INDIGO, "color": "#3F4DB8", "unit_color": "#5F6AD1"},
 }
+
+
+def _normalize_hex_color(value, fallback="#B22222"):
+    text = str(value or "").strip()
+    if re.match(r"^#[0-9a-fA-F]{6}$", text):
+        return text.upper()
+    return fallback
+
+
+def _hex_to_rgb(value, fallback=(178, 34, 34)):
+    hex_color = _normalize_hex_color(value, "#{:02X}{:02X}{:02X}".format(*fallback))
+    return (int(hex_color[1:3], 16), int(hex_color[3:5], 16), int(hex_color[5:7], 16))
+
+
+def _mix_with_white(rgb, ratio):
+    t = max(0.0, min(1.0, float(ratio)))
+    r, g, b = rgb
+    return (
+        int(r + (255 - r) * t),
+        int(g + (255 - g) * t),
+        int(b + (255 - b) * t),
+    )
 
 
 class FontManager:
@@ -506,10 +533,30 @@ def batch_adjust_content(content, amount):
         p1, p2 = int(m.group(1)), int(m.group(2))
         return f"{max(0, p1 + amount)}-{max(0, p2 + amount)}"
 
-    txt = re.sub(r"(\d{3,5})-(\d{3,5})(?=\s*鍏?", repl_range, txt)
-    txt = re.sub(r"(涓婅皟|涓嬭皟)(\d{1,5})(?=\s*鍏?", lambda _: f"{'涓婅皟' if amount >= 0 else '涓嬭皟'}{abs(amount)}", txt)
-    txt = re.sub(r"(\d{3,5})(?=\s*鍏?", lambda m: str(max(0, int(m.group(1)) + amount)), txt)
-    return txt.strip()
+    def adjust_line(line):
+        raw = line or ""
+        if not raw.strip():
+            return raw
+
+        # 价格行判定：包含“元/吨/上调/下调”，或是“【品名】：1234”这类结构（允许无单位）。
+        is_price_line = bool(
+            re.search(r"(元|吨|上调|下调)", raw)
+            or re.search(r"【[^】]{1,30}】\s*[：:]\s*(?:上调|下调|\d{3,5})", raw)
+        )
+        if not is_price_line:
+            return raw
+
+        out = re.sub(r"(\d{3,5})\s*-\s*(\d{3,5})", repl_range, raw)
+        out = re.sub(
+            r"(上调|下调)\s*(\d{1,5})",
+            lambda _: f"{'上调' if amount >= 0 else '下调'}{abs(amount)}",
+            out,
+        )
+        out = re.sub(r"(?<!\d)(\d{3,5})(?!\d)", lambda m: str(max(0, int(m.group(1)) + amount)), out)
+        return out
+
+    lines = txt.split("\n")
+    return "\n".join(adjust_line(line) for line in lines).strip()
 
 
 def _load_image(path):
@@ -574,10 +621,63 @@ def _apply_crawl_perspective(base_img, composed_img, box, top_scale=0.64, lift=0
     return layer
 
 
+def _calculate_layout_lines(lines, cw, is_holiday_mode, get_font):
+    layout = []
+    total_height = 0
+    row_idx = 0
+    td = ImageDraw.Draw(Image.new("L", (1, 1)))
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            h = 40 if is_holiday_mode else 10
+            layout.append({"type": "space", "height": h})
+            total_height += h
+            continue
+        
+        norm_line = re.sub(r"\s+", "", line)
+        is_note = bool(re.fullmatch(r"温馨提示[:：]?", norm_line))
+        if (("：" in line or ":" in line) and not is_note and not is_holiday_mode):
+             h = 85
+             layout.append({"type": "kv", "text": line, "height": h, "row_idx": row_idx})
+             total_height += h
+             row_idx += 1
+        else:
+             if row_idx > 0:
+                 total_height += 20
+                 layout.append({"type": "space", "height": 20})
+                 row_idx = 0
+             
+             f = get_font(42, True) if is_note else get_font(38)
+             lh = 65 if (is_note or is_holiday_mode) else 55
+             
+             chars, start = list(line), 0
+             wrapped_lines = []
+             while start < len(chars):
+                 est_len = int((cw - 120) / (42 if is_note else 38))
+                 end = min(len(chars), start + est_len + 5)
+                 while end > start and td.textlength("".join(chars[start:end]), font=f) > (cw - 120):
+                     end -= 1
+                 if end == start: end += 1
+                 wrapped_lines.append("".join(chars[start:end]))
+                 start = end
+             
+             block_height = len(wrapped_lines) * lh
+             layout.append({"type": "text", "lines": wrapped_lines, "height": block_height, "lh": lh, "is_note": is_note})
+             total_height += block_height
+
+    return layout, total_height
+
+
 def draw_poster(content, date_str, title, cfg):
     cfg = {**DEFAULT_CONFIG, **(cfg or {})}
     content = normalize_content_for_render(content or "")
     w, h = CANVAS_SIZE
+    theme_hex = _normalize_hex_color(cfg.get("theme_color", "#B22222"))
+    theme_rgb = _hex_to_rgb(theme_hex)
+    theme_deep = tuple(max(0, int(c * 0.72)) for c in theme_rgb)
+    theme_soft = _mix_with_white(theme_rgb, 0.78)
+    row_bg_fixed = (249, 249, 249)
 
     if cfg.get("bg_mode") == "preset" and cfg.get("bg_image_path"):
         base = _load_image(cfg.get("bg_image_path")) or Image.new("RGB", (w, h), "#E0E0E0")
@@ -607,35 +707,12 @@ def draw_poster(content, date_str, title, cfg):
     get_num_font = lambda size: FontManager.get(price_style.get("font") or FONT_NUM, size)
     cw = 920
     cx = (w - cw) // 2
+    
+    # Calculate Layout
     lines = (content or "").split("\n")
     is_holiday_mode = "放假" in (title or "")
-    sim_y, row_idx = 0, 0
-    td = ImageDraw.Draw(Image.new("L", (1, 1)))
-    for line in lines:
-        line = line.strip()
-        if not line:
-            sim_y += 40 if is_holiday_mode else 10
-            continue
-        is_note = any(k in line for k in ["注", "要求", "提示"])
-        if (("：" in line or ":" in line) and not is_note and not is_holiday_mode):
-            sim_y += 85
-            row_idx += 1
-        else:
-            if row_idx > 0:
-                sim_y += 20
-                row_idx = 0
-            f = get_font(42, True) if is_note else get_font(38)
-            lh = 65 if (is_note or is_holiday_mode) else 55
-            chars, start = list(line), 0
-            while start < len(chars):
-                est_len = int((cw - 120) / (42 if is_note else 38))
-                end = min(len(chars), start + est_len + 5)
-                while end > start and td.textlength("".join(chars[start:end]), font=f) > (cw - 120):
-                    end -= 1
-                if end == start:
-                    end += 1
-                sim_y += lh
-                start = end
+    layout_items, sim_y = _calculate_layout_lines(lines, cw, is_holiday_mode, get_font)
+
 
     ch = min(1800, max(900, 500 + sim_y - 10 + 460))
     cy = (h - ch) // 2
@@ -651,6 +728,7 @@ def draw_poster(content, date_str, title, cfg):
     card = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     flip_overlay = None
     dc = ImageDraw.Draw(card)
+    is_crawl_style = (style == "outline_pro") # Fix: Initialize is_crawl_style here
     if style == "ticket":
         dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=20, fill=(255, 255, 255, alpha))
         dc.ellipse((cx - 10, cy + ch // 2 - 10, cx + 10, cy + ch // 2 + 10), fill=(0, 0, 0, 0))
@@ -722,7 +800,7 @@ def draw_poster(content, date_str, title, cfg):
             cd.line([(cx + 40, cy + 18 + i), (cx + cw - 40, cy + 18 + i)], fill=(255, 236, 146, a), width=1)
         flip_overlay = crawl_frame.filter(ImageFilter.GaussianBlur(1.0))
     elif style == "outline":
-        border_c = cfg.get("theme_color", "#B22222")
+        border_c = theme_hex
 
         # 大面积软阴影：拉开和其它样式的空间层次。
         deep_shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
@@ -780,7 +858,7 @@ def draw_poster(content, date_str, title, cfg):
     if flip_overlay is not None:
         img = Image.alpha_composite(img, flip_overlay)
     draw = ImageDraw.Draw(img)
-    is_crawl_style = False
+    # is_crawl_style = (style == "outline_pro") # Moved initialization earlier
 
     logo = _load_image(cfg.get("logo_image_path"))
     if logo:
@@ -803,33 +881,49 @@ def draw_poster(content, date_str, title, cfg):
     cur += 40
 
     row_idx = 0
-    theme_c = cfg.get("theme_color", "#B22222")
-    for line in lines:
-        line = line.strip()
-        if not line:
-            cur += 40 if is_holiday_mode else 10
+    
+    for item in layout_items:
+        if item["type"] == "space":
+            cur += item["height"]
             continue
-        is_note = any(k in line for k in ["注", "要求", "提示"])
-        if (("：" in line or ":" in line) and not is_note and not is_holiday_mode):
+        
+        if item["type"] == "kv":
+            line = item["text"]
+            row_idx = item["row_idx"]
             if row_idx % 2 == 0:
-                draw.rectangle([(cx + 20, cur - 10), (cx + cw - 20, cur + 70)], fill=((22, 22, 26, 235) if is_crawl_style else "#F9F9F9"))
+                draw.rectangle(
+                    [(cx + 20, cur - 10), (cx + cw - 20, cur + 70)],
+                    fill=((22, 22, 26, 235) if is_crawl_style else (*row_bg_fixed, 255)),
+                )
+             
             k, v = line.replace("：", ":").split(":", 1)
             draw.text(
                 (cx + 60, cur + 30),
                 k.replace("【", "").replace("】", "").strip(),
                 font=get_label_font(43),
-                fill=("#F2D063" if is_crawl_style else "#262626"),
+                fill=("#F2D063" if is_crawl_style else theme_deep),
                 anchor="lm",
             )
+             
             if is_crawl_style:
                 c_val = "#F8D84A"
             else:
-                c_val = "#D32F2F" if any(x in v for x in ["上调", "涨"]) else "#2E7D32" if any(x in v for x in ["下调", "跌", "降"]) else price_style["color"]
+                price_mode = str(cfg.get("price_color_mode", "semantic") or "semantic").lower()
+                if price_mode == "semantic":
+                    if any(x in v for x in ["上调", "涨"]):
+                        c_val = "#D32F2F"
+                    elif any(x in v for x in ["下调", "跌", "降"]):
+                        c_val = "#2E7D32"
+                    else:
+                        c_val = theme_hex
+                else:
+                    c_val = theme_hex
+             
             base_y, rx = cur + 53, cx + cw - 60
             if "元" in v:
                 val_pt, unit_pt = v.split("元", 1)
                 fu = get_font(30)
-                unit_color = "#D8BE68" if is_crawl_style else (c_val if c_val in {"#D32F2F", "#2E7D32"} else price_style["unit_color"])
+                unit_color = "#D8BE68" if is_crawl_style else (c_val if c_val in {"#D32F2F", "#2E7D32"} else theme_soft)
                 draw.text((rx, base_y), "元" + unit_pt.strip(), font=fu, fill=unit_color, anchor="rs")
                 uw = draw.textlength("元" + unit_pt.strip(), font=fu)
                 fv = get_num_font(65)
@@ -840,25 +934,16 @@ def draw_poster(content, date_str, title, cfg):
                 fv = get_num_font(65)
                 draw.text((rx, base_y), v.strip(), font=fv, fill=c_val, anchor="rs")
             cur += 85
-            row_idx += 1
-        else:
-            if row_idx > 0:
-                cur += 20
-                row_idx = 0
+            
+        elif item["type"] == "text":
+            is_note = item["is_note"]
             c = "#FFB347" if is_note else ("#C5AA4C" if is_crawl_style else "#666")
             f = get_font(42, True) if is_note else get_font(38)
-            lh = 65 if (is_note or is_holiday_mode) else 55
-            chars, start = list(line), 0
-            while start < len(chars):
-                est_len = int((cw - 120) / (42 if is_note else 38))
-                end = min(len(chars), start + est_len + 5)
-                while end > start and draw.textlength("".join(chars[start:end]), font=f) > (cw - 120):
-                    end -= 1
-                if end == start:
-                    end += 1
-                draw.text((cx + 60, cur), "".join(chars[start:end]), font=f, fill=c, anchor="lt")
+            lh = item["lh"]
+            
+            for subline in item["lines"]:
+                draw.text((cx + 60, cur), subline, font=f, fill=c, anchor="lt")
                 cur += lh
-                start = end
 
     fy = footer_start_y
     for x in range(cx + 40, cx + cw - 40, 20):

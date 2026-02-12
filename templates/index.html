@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=20260212k" />
+  <link rel="stylesheet" href="/static/style.css?v=20260212n" />
 </head>
 <body>
   <div class="bg-orb orb-a"></div>
@@ -46,7 +46,7 @@
       <section class="card preview-card">
         <div class="section-head">
           <h2>实时预览</h2>
-          <span id="statusText">准备就绪</span>
+          <span id="statusText" aria-live="polite">准备就绪</span>
         </div>
         <div id="previewStage" class="preview-stage is-loading">
           <div id="previewPlaceholder" class="preview-placeholder">正在生成预览...</div>
@@ -151,6 +151,12 @@
                 <option value="double">双层</option>
                 <option value="outline_pro">透视金属</option>
                 <option value="outline">棱边立体</option>
+              </select>
+            </label>
+            <label>价格颜色模式
+              <select id="priceColorMode">
+                <option value="semantic">保留涨跌红绿</option>
+                <option value="theme">跟随主题色</option>
               </select>
             </label>
           </div>
@@ -262,6 +268,6 @@
     <button id="generateBtn" class="primary pill-btn">生成</button>
     <p class="action-bar-note">© 2026 开发者：李学涛</p>
   </footer>
-  <script src="/static/app.js?v=20260212k"></script>
+  <script src="/static/app.js?v=20260212n"></script>
 </body>
 </html>

@@ -8,6 +8,7 @@
   holidayBgBackup: null,
   holidayBgApplied: false,
   logoCrop: null,
+  previewSeq: 0,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -19,6 +20,7 @@ const UPLOAD_PREVIEW_FIELDS = [
 ];
 const AVAILABLE_CARD_STYLES = new Set(["single", "stack", "block", "flip", "ticket", "double", "outline_pro", "outline"]);
 const BG_VARIANTS = ["bg-variant-a", "bg-variant-b", "bg-variant-c", "bg-variant-d", "bg-variant-e"];
+const MAX_UPLOAD_MB = 15;
 
 function getStats(text) {
   const chars = (text || "").replace(/\s/g, "").length;
@@ -36,8 +38,29 @@ async function api(url, method = "GET", body = null) {
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  const ct = res.headers.get("content-type") || "";
+  let payload = null;
+  if (ct.includes("application/json")) {
+    payload = await res.json();
+  } else {
+    const text = await res.text();
+    payload = text ? { error: text } : {};
+  }
+  if (!res.ok) {
+    throw new Error(payload.error || payload.message || `请求失败(${res.status})`);
+  }
+  return payload;
+}
+
+function setButtonBusy(btn, busy, busyText = "处理中...") {
+  if (!btn) return;
+  if (!btn.dataset.originText) btn.dataset.originText = btn.textContent || "";
+  btn.disabled = !!busy;
+  btn.textContent = busy ? busyText : btn.dataset.originText;
+}
+
+function showStatusError(msg) {
+  $("statusText").textContent = msg || "操作失败，请重试";
 }
 function updateUserBadge() {
   const el = $("userBadge");
@@ -166,6 +189,7 @@ function formConfig() {
     ...state.config,
     theme_color: $("themeColor").value,
     card_style: $("cardStyle").value,
+    price_color_mode: $("priceColorMode").value,
     shop_name: $("shopName").value.trim(),
     phone: $("phone").value.trim(),
     address: $("address").value.trim(),
@@ -192,6 +216,7 @@ function bindFromConfig(cfg) {
   syncThemeColorUi($("themeColor").value);
   const savedCardStyle = cfg.card_style === "soft" ? "outline_pro" : (cfg.card_style || "single");
   $("cardStyle").value = AVAILABLE_CARD_STYLES.has(savedCardStyle) ? savedCardStyle : "single";
+  $("priceColorMode").value = cfg.price_color_mode || "semantic";
   $("shopName").value = cfg.shop_name || "";
   $("phone").value = cfg.phone || "";
   $("address").value = cfg.address || "";
@@ -216,10 +241,41 @@ function normalizeHexColor(v) {
   return m ? `#${m[1].toUpperCase()}` : "";
 }
 
+function hexToRgb(hex) {
+  const h = normalizeHexColor(hex);
+  if (!h) return null;
+  const r = parseInt(h.slice(1, 3), 16);
+  const g = parseInt(h.slice(3, 5), 16);
+  const b = parseInt(h.slice(5, 7), 16);
+  return { r, g, b };
+}
+
+function mixWithWhite(hex, ratio) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return "#B22222";
+  const t = Math.max(0, Math.min(1, ratio));
+  const r = Math.round(rgb.r + (255 - rgb.r) * t);
+  const g = Math.round(rgb.g + (255 - rgb.g) * t);
+  const b = Math.round(rgb.b + (255 - rgb.b) * t);
+  return `#${[r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
+
+function applyThemeToPage(color) {
+  const hex = normalizeHexColor(color) || "#B22222";
+  const rgb = hexToRgb(hex) || { r: 178, g: 34, b: 34 };
+  const root = document.documentElement;
+  root.style.setProperty("--primary", hex);
+  root.style.setProperty("--primary-rgb", `${rgb.r}, ${rgb.g}, ${rgb.b}`);
+  root.style.setProperty("--primary-strong", mixWithWhite(hex, 0.05));
+  root.style.setProperty("--primary-soft", mixWithWhite(hex, 0.2));
+  root.style.setProperty("--primary-surface", mixWithWhite(hex, 0.88));
+}
+
 function syncThemeColorUi(color) {
   const hex = normalizeHexColor(color) || "#B22222";
   const hexEl = $("themeColorHex");
   if (hexEl) hexEl.textContent = hex;
+  applyThemeToPage(hex);
   document.querySelectorAll(".theme-swatch").forEach((btn) => {
     btn.classList.toggle("is-active", normalizeHexColor(btn.dataset.color) === hex);
   });
@@ -233,6 +289,15 @@ function toAssetUrl(path) {
     .map((seg) => encodeURIComponent(seg))
     .join("/");
   return `/asset/${safePath}`;
+}
+
+function toDownloadUrl(path) {
+  if (!path) return "";
+  const safePath = String(path)
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+  return `/download/${safePath}`;
 }
 
 function renderUploadThumb(key, path) {
@@ -311,6 +376,12 @@ function applyHolidayPresetIfNeeded(templateName) {
 async function uploadFile(inputEl, key) {
   const file = inputEl.files?.[0];
   if (!file) return;
+  if (!String(file.type || "").startsWith("image/")) {
+    throw new Error("仅支持图片文件");
+  }
+  if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+    throw new Error(`图片不能超过 ${MAX_UPLOAD_MB}MB`);
+  }
   const fd = new FormData();
   fd.append("file", file);
   const res = await fetch("/api/upload", { method: "POST", body: fd });
@@ -321,6 +392,9 @@ async function uploadFile(inputEl, key) {
 }
 
 async function uploadBlob(blob, filename, key) {
+  if (blob.size > MAX_UPLOAD_MB * 1024 * 1024) {
+    throw new Error(`图片不能超过 ${MAX_UPLOAD_MB}MB`);
+  }
   const fd = new FormData();
   fd.append("file", blob, filename);
   const res = await fetch("/api/upload", { method: "POST", body: fd });
@@ -458,6 +532,7 @@ function setPreviewLoaded() {
 }
 
 async function refreshPreview() {
+  const seq = ++state.previewSeq;
   $("statusText").textContent = "生成预览中...";
   if (!$("previewImage").src) {
     setPreviewLoading("正在生成预览...");
@@ -468,10 +543,17 @@ async function refreshPreview() {
     content: $("contentInput").value,
     config: formConfig(),
   };
-  const data = await api("/api/preview", "POST", payload);
-  $("previewImage").src = data.image;
-  $("dateInput").value = data.date || $("dateInput").value;
-  $("statusText").textContent = !data.valid && data.warnings.length ? data.warnings[0] : "预览已更新";
+  try {
+    const data = await api("/api/preview", "POST", payload);
+    if (seq !== state.previewSeq) return;
+    $("previewImage").src = data.image;
+    $("dateInput").value = data.date || $("dateInput").value;
+    $("statusText").textContent = !data.valid && data.warnings.length ? data.warnings[0] : "预览已更新";
+  } catch (e) {
+    if (seq !== state.previewSeq) return;
+    setPreviewLoading("预览生成失败");
+    showStatusError(e.message || "预览生成失败");
+  }
 }
 
 function debounce(fn, delay = 500) {
@@ -546,7 +628,7 @@ async function init() {
     "titleInput", "dateInput", "contentInput",
     "shopName", "phone", "address", "slogan",
     "themeColor", "cardStyle", "bgBlur", "bgBrightness",
-    "cardOpacity", "stampOpacity", "watermarkEnabled",
+    "priceColorMode", "cardOpacity", "stampOpacity", "watermarkEnabled",
     "watermarkText", "watermarkOpacity", "watermarkDensity", "copyMode", "exportFormat",
   ];
 
@@ -565,8 +647,12 @@ async function init() {
         state.config = buildConfigPayloadForSave();
         await api("/api/config", "POST", state.config);
       } catch (_) {}
-      await api("/api/logout", "POST");
-      location.reload();
+      try {
+        await api("/api/logout", "POST");
+        location.reload();
+      } catch (e) {
+        showStatusError(e.message || "退出登录失败");
+      }
       return;
     }
     openLoginModal();
@@ -588,17 +674,25 @@ async function init() {
   $("confirmLogoCropBtn").addEventListener("click", async () => {
     const crop = state.logoCrop;
     if (!crop?.img) return;
-    const outSize = 640;
-    const out = document.createElement("canvas");
-    out.width = outSize;
-    out.height = outSize;
-    const ox = out.getContext("2d");
-    ox.drawImage(crop.img, crop.sx, crop.sy, crop.side, crop.side, 0, 0, outSize, outSize);
-    const blob = await new Promise((resolve) => out.toBlob(resolve, "image/png", 0.95));
-    if (!blob) return;
-    await uploadBlob(blob, "logo-crop.png", "logo_image_path");
-    closeLogoCropModal();
-    await refreshPreview();
+    const btn = $("confirmLogoCropBtn");
+    setButtonBusy(btn, true, "上传中...");
+    try {
+      const outSize = 640;
+      const out = document.createElement("canvas");
+      out.width = outSize;
+      out.height = outSize;
+      const ox = out.getContext("2d");
+      ox.drawImage(crop.img, crop.sx, crop.sy, crop.side, crop.side, 0, 0, outSize, outSize);
+      const blob = await new Promise((resolve) => out.toBlob(resolve, "image/png", 0.95));
+      if (!blob) throw new Error("裁剪失败，请重试");
+      await uploadBlob(blob, "logo-crop.png", "logo_image_path");
+      closeLogoCropModal();
+      await refreshPreview();
+    } catch (e) {
+      showStatusError(e.message || "Logo 上传失败");
+    } finally {
+      setButtonBusy(btn, false);
+    }
   });
   $("toggleLoginPwdBtn").addEventListener("click", () => {
     const input = $("loginPasswordInput");
@@ -657,13 +751,17 @@ async function init() {
   });
 
   $("presetSelect").addEventListener("change", async (e) => {
-    const path = e.target.value;
-    if (path) {
-      state.config.bg_mode = "preset";
-      state.config.bg_image_path = path;
+    try {
+      const path = e.target.value;
+      if (path) {
+        state.config.bg_mode = "preset";
+        state.config.bg_image_path = path;
+      }
+      renderUploadThumb("bg_image_path", state.config.bg_image_path || "");
+      await refreshPreview();
+    } catch (e2) {
+      showStatusError(e2.message || "背景切换失败");
     }
-    renderUploadThumb("bg_image_path", state.config.bg_image_path || "");
-    await refreshPreview();
   });
 
   $("todayBtn").addEventListener("click", async () => {
@@ -677,21 +775,35 @@ async function init() {
   });
 
   $("formatBtn").addEventListener("click", async () => {
-    const d = await api("/api/format", "POST", { content: $("contentInput").value });
-    $("contentInput").value = d.content;
-    updateStats();
-    await refreshPreview();
+    try {
+      const d = await api("/api/format", "POST", { content: $("contentInput").value });
+      $("contentInput").value = d.content;
+      updateStats();
+      await refreshPreview();
+    } catch (e) {
+      showStatusError(e.message || "自动格式化失败");
+    }
   });
 
   $("batchBtn").addEventListener("click", async () => {
     const raw = prompt("输入调整金额（如 +50 或 -30）", "+10");
     if (!raw) return;
-    const amount = Number(raw.replace("+", "").trim()) * (raw.trim().startsWith("-") ? -1 : 1);
-    if (Number.isNaN(amount)) return;
-    const d = await api("/api/batch-adjust", "POST", { content: $("contentInput").value, amount });
-    $("contentInput").value = d.content;
-    updateStats();
-    await refreshPreview();
+    const cleaned = String(raw).trim().replace(/\s+/g, "").replace("＋", "+").replace("－", "-");
+    const m = cleaned.match(/^([+-]?)(\d{1,5})$/);
+    if (!m) {
+      showStatusError("请输入有效金额，例如 +50 或 -30");
+      return;
+    }
+    const sign = m[1] === "-" ? -1 : 1;
+    const amount = sign * Number(m[2]);
+    try {
+      const d = await api("/api/batch-adjust", "POST", { content: $("contentInput").value, amount });
+      $("contentInput").value = d.content;
+      updateStats();
+      await refreshPreview();
+    } catch (e) {
+      showStatusError(e.message || "批量调价失败");
+    }
   });
 
   $("templateSelect").addEventListener("change", async (e) => {
@@ -733,29 +845,56 @@ async function init() {
   });
 
   $("saveConfigBtn").addEventListener("click", async () => {
-    state.config = buildConfigPayloadForSave();
-    const d = await api("/api/config", "POST", state.config);
-    state.config = d.config;
-    $("statusText").textContent = withGuestHint("设置已保存");
-    closeSettingsModal();
-    await refreshPreview();
+    const btn = $("saveConfigBtn");
+    setButtonBusy(btn, true, "保存中...");
+    try {
+      state.config = buildConfigPayloadForSave();
+      const d = await api("/api/config", "POST", state.config);
+      state.config = d.config;
+      $("statusText").textContent = withGuestHint("设置已保存");
+      closeSettingsModal();
+      await refreshPreview();
+    } catch (e) {
+      showStatusError(e.message || "保存设置失败");
+    } finally {
+      setButtonBusy(btn, false);
+    }
   });
 
   $("logoUpload").addEventListener("change", async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    openLogoCropModal(file);
+    try {
+      if (!String(file.type || "").startsWith("image/")) {
+        throw new Error("仅支持图片文件");
+      }
+      if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+        throw new Error(`图片不能超过 ${MAX_UPLOAD_MB}MB`);
+      }
+      openLogoCropModal(file);
+    } catch (e2) {
+      showStatusError(e2.message || "Logo 选择失败");
+      e.target.value = "";
+    }
   });
 
   [["bgUpload", "bg_image_path", "custom"], ["stampUpload", "stamp_image_path"], ["qrUpload", "qrcode_image_path"]].forEach(([id, key, mode]) => {
     $(id).addEventListener("change", async (e) => {
-      await uploadFile(e.target, key);
-      if (mode === "custom") state.config.bg_mode = "custom";
-      await refreshPreview();
+      try {
+        await uploadFile(e.target, key);
+        if (mode === "custom") state.config.bg_mode = "custom";
+        await refreshPreview();
+      } catch (e2) {
+        showStatusError(e2.message || "上传失败");
+      } finally {
+        e.target.value = "";
+      }
     });
   });
 
   $("generateBtn").addEventListener("click", async () => {
+    const btn = $("generateBtn");
+    setButtonBusy(btn, true, "生成中...");
     const payload = {
       title: $("titleInput").value.trim(),
       date: $("dateInput").value.trim(),
@@ -764,26 +903,35 @@ async function init() {
       export_format: $("exportFormat").value,
     };
 
-    const d = await api("/api/generate", "POST", payload);
-    const mode = $("copyMode").value;
+    try {
+      const d = await api("/api/generate", "POST", payload);
+      const mode = $("copyMode").value;
+      const downloadUrl = toDownloadUrl(d.file);
 
-    if (mode.includes("文案")) {
-      await navigator.clipboard.writeText(d.copy_text);
-    }
+      if (mode.includes("文案")) {
+        await navigator.clipboard.writeText(d.copy_text);
+      }
 
-    if (mode.includes("图片")) {
-      const resp = await fetch(`/download/${d.file}`);
-      const blob = await resp.blob();
-      try {
-        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-      } catch (_) {}
-    }
+      if (mode.includes("图片")) {
+        const resp = await fetch(downloadUrl);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          try {
+            await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+          } catch (_) {}
+        }
+      }
 
-    window.open(`/download/${d.file}`, "_blank");
-    $("statusText").textContent = withGuestHint(`已生成 ${d.name}`);
-    if (state.isGuest && !state.guestRegisterTipShown) {
-      state.guestRegisterTipShown = true;
-      alert("已生成成功。建议注册一个用户：可以保存设置和内容，下次可直接继续使用。");
+      window.open(downloadUrl, "_blank");
+      $("statusText").textContent = withGuestHint(`已生成 ${d.name}`);
+      if (state.isGuest && !state.guestRegisterTipShown) {
+        state.guestRegisterTipShown = true;
+        alert("已生成成功。建议注册一个用户：可以保存设置和内容，下次可直接继续使用。");
+      }
+    } catch (e) {
+      showStatusError(e.message || "生成失败");
+    } finally {
+      setButtonBusy(btn, false);
     }
   });
 

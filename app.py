@@ -35,6 +35,8 @@ OUTPUT_DIR = os.path.join(DATA_DIR, "outputs")
 USER_CONFIG_DIR = os.path.join(DATA_DIR, "user_configs")
 USERS_PATH = os.path.join(DATA_DIR, "users.json")
 CONFIG_PATH = os.path.join(DATA_DIR, "web_config.json")
+MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -42,6 +44,7 @@ os.makedirs(USER_CONFIG_DIR, exist_ok=True)
 
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 app.secret_key = os.environ.get("POSTER_APP_SECRET", "replace-this-in-production")
 
 
@@ -56,9 +59,17 @@ def _public_path(path):
 def _resolve_asset_path(path):
     if not path:
         return ""
-    if os.path.isabs(path):
-        return path
-    return os.path.join(BASE_DIR, path)
+    path = str(path).strip()
+    if not path:
+        return ""
+    ext = os.path.splitext(path)[1].lower()
+    if ext and ext not in ALLOWED_IMAGE_EXTENSIONS:
+        return ""
+    target = path if os.path.isabs(path) else os.path.join(BASE_DIR, path)
+    abs_path = os.path.abspath(target)
+    allowed_roots = [os.path.abspath(UPLOAD_DIR), os.path.abspath(os.path.join(BASE_DIR, "presets"))]
+    in_allowed = any(abs_path == root or abs_path.startswith(root + os.sep) for root in allowed_roots)
+    return abs_path if in_allowed else ""
 
 
 def _normalize_cfg_paths(cfg):
@@ -162,6 +173,15 @@ def _safe_join_base_path(relpath):
     return ""
 
 
+def _json_body():
+    data = request.get_json(silent=True)
+    if data is None:
+        raise ValueError("请求体必须是 JSON")
+    if not isinstance(data, dict):
+        raise ValueError("JSON 格式错误")
+    return data
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -173,6 +193,12 @@ def favicon():
     if not os.path.isfile(icon_path):
         return "", 404
     return send_file(icon_path, mimetype="image/x-icon")
+
+
+@app.errorhandler(413)
+def too_large(_):
+    mb = MAX_UPLOAD_BYTES // (1024 * 1024)
+    return jsonify({"error": f"上传文件过大，最大支持 {mb}MB"}), 413
 
 
 @app.get("/api/me")
@@ -190,7 +216,10 @@ def api_me():
 
 @app.post("/api/login")
 def api_login():
-    data = request.get_json(force=True)
+    try:
+        data = _json_body()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     uid = _sanitize_user_id(data.get("user_id", ""))
     password = (data.get("password") or "").strip()
     if not uid:
@@ -243,8 +272,10 @@ def api_upload():
     if not f.filename:
         return jsonify({"error": "文件名为空"}), 400
     ext = os.path.splitext(f.filename)[1].lower()
-    if ext not in {".png", ".jpg", ".jpeg", ".webp"}:
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
         return jsonify({"error": "仅支持 PNG/JPG/JPEG/WEBP"}), 400
+    if f.mimetype and not str(f.mimetype).lower().startswith("image/"):
+        return jsonify({"error": "仅支持图片文件"}), 400
     filename = f"{uuid.uuid4().hex}{ext}"
     path = os.path.join(UPLOAD_DIR, filename)
     f.save(path)
@@ -254,29 +285,41 @@ def api_upload():
 @app.post("/api/preview")
 def api_preview():
     uid = _ensure_user_id()
-    data = request.get_json(force=True)
+    try:
+        data = _json_body()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     content = data.get("content", "")
     title = data.get("title", "")
     date_str = format_date_input(data.get("date", ""))
-    cfg = _normalize_cfg_paths({**_load_user_config(uid), **data.get("config", {})})
-    img = draw_poster(content, date_str, title, cfg)
-    buf = io.BytesIO()
-    img.convert("RGB").save(buf, "PNG")
-    b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-    valid, warnings = validate_content(content)
-    return jsonify({"image": f"data:image/png;base64,{b64}", "date": date_str, "valid": valid, "warnings": warnings})
+    try:
+        cfg = _normalize_cfg_paths({**_load_user_config(uid), **data.get("config", {})})
+        img = draw_poster(content, date_str, title, cfg)
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, "PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        valid, warnings = validate_content(content)
+        return jsonify({"image": f"data:image/png;base64,{b64}", "date": date_str, "valid": valid, "warnings": warnings})
+    except Exception:
+        return jsonify({"error": "预览生成失败，请检查图片素材和参数后重试"}), 500
 
 
 @app.post("/api/generate")
 def api_generate():
     uid = _ensure_user_id()
-    data = request.get_json(force=True)
+    try:
+        data = _json_body()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     content = data.get("content", "")
     title = data.get("title", "") or "公告"
     date_str = format_date_input(data.get("date", ""))
     cfg = _normalize_cfg_paths({**_load_user_config(uid), **data.get("config", {})})
     export_format = (data.get("export_format") or cfg.get("export_format") or "PNG").upper()
-    img = draw_poster(content, date_str, title, cfg).convert("RGB")
+    try:
+        img = draw_poster(content, date_str, title, cfg).convert("RGB")
+    except Exception:
+        return jsonify({"error": "生成失败，请检查图片素材和参数后重试"}), 500
 
     safe_title = _sanitize_filename(title)
     ext = {"PNG": ".png", "JPEG": ".jpg", "PDF": ".pdf"}.get(export_format, ".png")
@@ -326,7 +369,10 @@ def api_asset(relpath):
 @app.post("/api/config")
 def api_config():
     uid = _ensure_user_id()
-    data = request.get_json(force=True)
+    try:
+        data = _json_body()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     cfg = {**DEFAULT_CONFIG, **data}
     save_config(_get_user_config_path(uid), cfg)
     return jsonify({"ok": True, "config": cfg})
@@ -334,21 +380,33 @@ def api_config():
 
 @app.post("/api/format")
 def api_format():
-    data = request.get_json(force=True)
+    try:
+        data = _json_body()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     return jsonify({"content": auto_format_content(data.get("content", ""))})
 
 
 @app.post("/api/validate")
 def api_validate():
-    data = request.get_json(force=True)
+    try:
+        data = _json_body()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     valid, warnings = validate_content(data.get("content", ""))
     return jsonify({"valid": valid, "warnings": warnings})
 
 
 @app.post("/api/batch-adjust")
 def api_batch_adjust():
-    data = request.get_json(force=True)
-    amount = int(data.get("amount", 0))
+    try:
+        data = _json_body()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    try:
+        amount = int(data.get("amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "调整金额必须是数字"}), 400
     return jsonify({"content": batch_adjust_content(data.get("content", ""), amount)})
 
 

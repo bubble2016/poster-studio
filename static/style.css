@@ -5,6 +5,10 @@
   --surface: rgba(255, 255, 255, 0.86);
   --stroke: #d9e2ef;
   --primary: #0b8f7a;
+  --primary-rgb: 11, 143, 122;
+  --primary-strong: #087f6d;
+  --primary-soft: #0aa386;
+  --primary-surface: #eaf7f4;
   --danger: #d7364f;
 }
 
@@ -266,6 +270,11 @@ input[type="checkbox"] { width: 20px; height: 20px; padding: 0; }
 
 button { cursor: pointer; min-height: 44px; transition: transform .16s ease, background-color .16s ease; }
 button:active { transform: translateY(1px); }
+button:disabled {
+  cursor: not-allowed;
+  opacity: .65;
+  transform: none;
+}
 .mini-btn { background: #eef6ff; }
 .mini-btn.danger { background: #ffecee; color: #8d1126; }
 .ghost-btn { width: auto; min-height: 40px; padding: 8px 12px; background: rgba(255,255,255,.85); }
@@ -370,17 +379,17 @@ select:focus-visible {
   min-height: 38px;
   padding: 8px 12px;
   border-radius: 999px;
-  border: 1px solid var(--stroke);
-  background: #ffffff;
-  color: #334155;
+  border: 1px solid rgba(var(--primary-rgb), .26);
+  background: rgba(var(--primary-rgb), .08);
+  color: var(--primary-strong);
   font-size: .9rem;
   font-weight: 600;
 }
 .settings-tab.is-active {
-  background: linear-gradient(90deg, #087f6d, #0aa386);
+  background: linear-gradient(90deg, var(--primary-strong), var(--primary-soft));
   color: #fff;
   border-color: transparent;
-  box-shadow: 0 8px 16px rgba(10, 163, 134, .24);
+  box-shadow: 0 8px 16px rgba(var(--primary-rgb), .28);
 }
 .settings-pane {
   margin-bottom: 18px;
@@ -480,7 +489,7 @@ body.no-scroll { overflow: hidden; }
   font-size: 1.06rem;
   font-weight: 700;
   letter-spacing: .02em;
-  box-shadow: 0 12px 24px rgba(8, 127, 109, .24);
+  box-shadow: 0 12px 24px rgba(var(--primary-rgb), .24);
   pointer-events: auto;
 }
 .action-bar-note {
@@ -489,7 +498,7 @@ body.no-scroll { overflow: hidden; }
   color: rgba(15, 23, 42, .72);
   text-shadow: 0 1px 0 rgba(255, 255, 255, .7);
 }
-.primary { background: linear-gradient(90deg, #087f6d, #0aa386); color: #fff; border: none; }
+.primary { background: linear-gradient(90deg, var(--primary-strong), var(--primary-soft)); color: #fff; border: none; }
 
 @media (min-width: 720px) {
   .field-grid { grid-template-columns: 1fr 1fr; }
