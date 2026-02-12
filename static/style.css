@@ -388,6 +388,20 @@ body.no-scroll { overflow: hidden; }
 }
 
 @media (max-width: 460px) {
+  .settings-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    overflow: visible;
+    white-space: normal;
+    padding: 0;
+  }
+  .settings-tab {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+    padding: 8px 10px;
+  }
   .topbar {
     gap: 10px;
     padding: 10px 10px;

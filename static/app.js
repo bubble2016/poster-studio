@@ -35,7 +35,7 @@ function updateUserBadge() {
     el.textContent = "未登录";
     return;
   }
-  el.textContent = state.isGuest ? `访客：${state.currentUser}` : `用户：${state.currentUser}`;
+  el.textContent = state.isGuest ? "访客" : `用户：${state.currentUser}`;
 }
 
 function withGuestHint(baseText) {
@@ -63,10 +63,25 @@ function switchSettingsTab(tab) {
   });
 }
 
+function syncSettingsPaneHeight() {
+  const basePane = $("settingsPaneBase");
+  if (!basePane || basePane.hidden) return;
+
+  // 以“基础信息”面板为基准，统一其他面板最小高度，避免切换时跳动。
+  basePane.style.minHeight = "0px";
+  const baseHeight = Math.ceil(basePane.scrollHeight);
+  if (!baseHeight) return;
+
+  document.querySelectorAll("[data-settings-pane]").forEach((pane) => {
+    pane.style.minHeight = `${baseHeight}px`;
+  });
+}
+
 function openSettingsModal() {
   $("settingsModal").classList.remove("hidden");
   document.body.classList.add("no-scroll");
   switchSettingsTab("base");
+  syncSettingsPaneHeight();
 }
 
 function closeSettingsModal() {
@@ -326,6 +341,8 @@ async function init() {
     btn.addEventListener("click", () => switchSettingsTab(btn.dataset.settingsTab));
   });
 
+  window.addEventListener("resize", debounce(syncSettingsPaneHeight, 120));
+
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     if (!$("loginModal").classList.contains("hidden")) {
@@ -468,6 +485,7 @@ async function init() {
   });
 
   await refreshPreview();
+  syncSettingsPaneHeight();
 }
 
 init().catch((e) => {

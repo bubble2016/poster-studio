@@ -201,6 +201,87 @@ class PresetGenerator:
         return ImageChops.blend(img, noise, 0.15)
 
     @staticmethod
+    def gen_neon_city():
+        w, h = CANVAS_SIZE
+        blobs = [
+            (w * 0.12, h * 0.18, 430, (15, 32, 92)),
+            (w * 0.92, h * 0.14, 360, (0, 170, 220)),
+            (w * 0.28, h * 0.82, 420, (160, 40, 190)),
+            (w * 0.82, h * 0.82, 480, (30, 120, 255)),
+        ]
+        base = PresetGenerator._gen_fluid_base(w, h, "#0A0F2A", blobs)
+        glow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(glow)
+        for _ in range(14):
+            x1 = random.randint(-120, w)
+            x2 = x1 + random.randint(280, 620)
+            y = random.randint(40, h - 40)
+            color = random.choice(
+                [(20, 255, 255, 90), (255, 80, 180, 86), (70, 130, 255, 86), (255, 190, 70, 68)]
+            )
+            gd.line([(x1, y), (x2, y + random.randint(-50, 50))], fill=color, width=random.randint(3, 7))
+        glow = glow.filter(ImageFilter.GaussianBlur(14))
+        img = Image.alpha_composite(base.convert("RGBA"), glow).convert("RGB")
+        return PresetGenerator._add_noise(img, 0.045)
+
+    @staticmethod
+    def gen_sunset_amber():
+        w, h = CANVAS_SIZE
+        top = (255, 236, 198)
+        mid = (255, 173, 116)
+        bottom = (127, 79, 198)
+        img = Image.new("RGB", (w, h), top)
+        draw = ImageDraw.Draw(img)
+        for y in range(h):
+            t = y / max(1, h - 1)
+            if t < 0.55:
+                s = t / 0.55
+                r = int(top[0] + (mid[0] - top[0]) * s)
+                g = int(top[1] + (mid[1] - top[1]) * s)
+                b = int(top[2] + (mid[2] - top[2]) * s)
+            else:
+                s = (t - 0.55) / 0.45
+                r = int(mid[0] + (bottom[0] - mid[0]) * s)
+                g = int(mid[1] + (bottom[1] - mid[1]) * s)
+                b = int(mid[2] + (bottom[2] - mid[2]) * s)
+            draw.line([(0, y), (w, y)], fill=(r, g, b))
+
+        haze = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        hd = ImageDraw.Draw(haze)
+        for _ in range(10):
+            rx = random.randint(-120, w + 120)
+            ry = random.randint(-80, h + 80)
+            rr = random.randint(180, 360)
+            col = random.choice([(255, 255, 255, 30), (255, 224, 186, 40), (244, 170, 255, 28)])
+            hd.ellipse((rx - rr, ry - rr, rx + rr, ry + rr), fill=col)
+        haze = haze.filter(ImageFilter.GaussianBlur(30))
+        img = Image.alpha_composite(img.convert("RGBA"), haze).convert("RGB")
+        return PresetGenerator._add_noise(img, 0.035)
+
+    @staticmethod
+    def gen_obsidian_grid():
+        w, h = CANVAS_SIZE
+        img = Image.new("RGB", (w, h), "#12161F")
+        noise = Image.effect_noise((w, h), 28).convert("RGB")
+        img = ImageChops.blend(img, noise, 0.12)
+
+        grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(grid)
+        line_color = (155, 174, 204, 30)
+        for x in range(0, w, 72):
+            gd.line([(x, 0), (x, h)], fill=line_color, width=1)
+        for y in range(0, h, 72):
+            gd.line([(0, y), (w, y)], fill=line_color, width=1)
+        for _ in range(6):
+            x = random.randint(100, w - 100)
+            y = random.randint(120, h - 120)
+            r = random.randint(110, 220)
+            gd.ellipse((x - r, y - r, x + r, y + r), outline=(110, 132, 170, 34), width=2)
+        grid = grid.filter(ImageFilter.GaussianBlur(1))
+        img = Image.alpha_composite(img.convert("RGBA"), grid).convert("RGB")
+        return PresetGenerator._add_noise(img, 0.025)
+
+    @staticmethod
     def get_presets(base_dir):
         presets_dir = os.path.join(base_dir, "presets")
         os.makedirs(presets_dir, exist_ok=True)
@@ -210,6 +291,9 @@ class PresetGenerator:
             ("preset_frosted_grey.png", "钛金磨砂灰", PresetGenerator.gen_frosted_grey),
             ("preset_misty_green.png", "晨雾森林绿", PresetGenerator.gen_misty_green),
             ("preset_kraft_pro.png", "粗纹牛皮纸", PresetGenerator.gen_kraft_pro),
+            ("preset_neon_city.png", "霓虹赛博夜", PresetGenerator.gen_neon_city),
+            ("preset_sunset_amber.png", "落日琥珀橙", PresetGenerator.gen_sunset_amber),
+            ("preset_obsidian_grid.png", "曜石网格黑", PresetGenerator.gen_obsidian_grid),
         ]
         out = {}
         for filename, name, fn in presets:
