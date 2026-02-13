@@ -1005,6 +1005,30 @@ def draw_poster(content, date_str, title, cfg):
     cur += 40
 
     row_idx = 0
+
+    def _draw_price_value_right(text, right_x, base_y, color):
+        value = (text or "").strip()
+        if not value:
+            return
+        has_cn = any("\u4e00" <= c <= "\u9fff" for c in value)
+        m = re.search(r"\d+(?:\.\d+)?", value)
+        if has_cn and m:
+            cn_font = get_label_font(45)
+            num_font = get_num_font(65)
+            left_txt = value[:m.start()]
+            num_txt = value[m.start():m.end()]
+            right_txt = value[m.end():]
+            x = right_x
+            if right_txt:
+                draw.text((x, base_y), right_txt, font=cn_font, fill=color, anchor="rs")
+                x -= draw.textlength(right_txt, font=cn_font)
+            draw.text((x, base_y), num_txt, font=num_font, fill=color, anchor="rs")
+            x -= draw.textlength(num_txt, font=num_font)
+            if left_txt:
+                draw.text((x, base_y), left_txt, font=cn_font, fill=color, anchor="rs")
+            return
+        font = get_label_font(45) if has_cn else get_num_font(65)
+        draw.text((right_x, base_y), value, font=font, fill=color, anchor="rs")
     
     for item in layout_items:
         if item["type"] == "space":
@@ -1050,13 +1074,9 @@ def draw_poster(content, date_str, title, cfg):
                     unit_color = c_val if c_val in {"#D32F2F", "#2E7D32"} else theme_unit
                 draw.text((rx, base_y), "元" + unit_pt.strip(), font=fu, fill=unit_color, anchor="rs")
                 uw = draw.textlength("元" + unit_pt.strip(), font=fu)
-                fv = get_num_font(65)
-                if any("\u4e00" <= c <= "\u9fff" for c in val_pt):
-                    fv = get_font(60)
-                draw.text((rx - uw - 8, base_y), val_pt.strip(), font=fv, fill=c_val, anchor="rs")
+                _draw_price_value_right(val_pt, rx - uw - 8, base_y, c_val)
             else:
-                fv = get_num_font(65)
-                draw.text((rx, base_y), v.strip(), font=fv, fill=c_val, anchor="rs")
+                _draw_price_value_right(v, rx, base_y, c_val)
             cur += 85
             
         elif item["type"] == "text":

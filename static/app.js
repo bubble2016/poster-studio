@@ -1088,7 +1088,9 @@ async function refreshPreview() {
   try {
     const data = await api("/api/preview", "POST", payload);
     if (seq !== state.previewSeq) return;
-    $("previewImage").src = data.image;
+    const previewSrc = data.image_url || data.image;
+    if (!previewSrc) throw new Error("预览地址无效");
+    $("previewImage").src = previewSrc;
     $("dateInput").value = data.date || $("dateInput").value;
     $("statusText").textContent = !data.valid && data.warnings.length ? data.warnings[0] : "预览已更新";
   } catch (e) {

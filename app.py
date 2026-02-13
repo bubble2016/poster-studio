@@ -1,15 +1,18 @@
-﻿import base64
-import datetime
+﻿import datetime
+import hashlib
 import io
 import json
 import os
 import random
 import re
+import shutil
 import string
 import threading
+import time
 import uuid
+import zipfile
 
-from flask import Flask, jsonify, render_template, request, send_file, session
+from flask import Flask, Response, jsonify, render_template, request, send_file, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from poster_engine import (
@@ -26,6 +29,15 @@ from poster_engine import (
     PresetGenerator,
 )
 
+try:
+    from redis import Redis
+    from redis.exceptions import RedisError
+except Exception:
+    Redis = None
+
+    class RedisError(Exception):
+        pass
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("POSTER_DATA_DIR", os.path.join(BASE_DIR, "web_data"))
@@ -40,6 +52,11 @@ USERS_PATH = os.path.join(DATA_DIR, "users.json")
 CONFIG_PATH = os.path.join(DATA_DIR, "web_config.json")
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+PREVIEW_CACHE_TTL_SECONDS = max(30, int(os.environ.get("POSTER_PREVIEW_CACHE_TTL", "300")))
+PREVIEW_CACHE_PREFIX = os.environ.get("POSTER_PREVIEW_CACHE_PREFIX", "poster:preview")
+PREVIEW_CACHE_MAX_LOCAL_ITEMS = max(16, int(os.environ.get("POSTER_PREVIEW_CACHE_LOCAL_MAX", "128")))
+PREVIEW_ID_RE = re.compile(r"^[0-9a-f]{64}$")
+ADMIN_TOKEN = (os.environ.get("POSTER_ADMIN_TOKEN") or "").strip()
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -50,6 +67,71 @@ app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 app.secret_key = os.environ.get("POSTER_APP_SECRET", "replace-this-in-production")
+
+
+class PreviewCache:
+    def __init__(self):
+        self._redis = None
+        self._local = {}
+        self._lock = threading.Lock()
+        redis_url = (os.environ.get("POSTER_REDIS_URL") or "").strip()
+        if not redis_url or Redis is None:
+            return
+        try:
+            cli = Redis.from_url(
+                redis_url,
+                decode_responses=False,
+                socket_connect_timeout=0.5,
+                socket_timeout=0.5,
+            )
+            cli.ping()
+            self._redis = cli
+        except Exception:
+            self._redis = None
+
+    def _key(self, user_id, cache_id):
+        return f"{PREVIEW_CACHE_PREFIX}:{user_id}:{cache_id}"
+
+    def get(self, user_id, cache_id):
+        if self._redis is not None:
+            try:
+                data = self._redis.get(self._key(user_id, cache_id))
+                if data:
+                    return data
+            except RedisError:
+                pass
+        local_key = (user_id, cache_id)
+        now = time.time()
+        with self._lock:
+            entry = self._local.get(local_key)
+            if not entry:
+                return None
+            expires_at, data = entry
+            if expires_at <= now:
+                self._local.pop(local_key, None)
+                return None
+            return data
+
+    def set(self, user_id, cache_id, data):
+        if self._redis is not None:
+            try:
+                self._redis.setex(self._key(user_id, cache_id), PREVIEW_CACHE_TTL_SECONDS, data)
+            except RedisError:
+                pass
+        local_key = (user_id, cache_id)
+        expires_at = time.time() + PREVIEW_CACHE_TTL_SECONDS
+        with self._lock:
+            self._local[local_key] = (expires_at, data)
+            if len(self._local) <= PREVIEW_CACHE_MAX_LOCAL_ITEMS:
+                return
+            stale_keys = [k for k, v in self._local.items() if v[0] <= time.time()]
+            for k in stale_keys:
+                self._local.pop(k, None)
+            while len(self._local) > PREVIEW_CACHE_MAX_LOCAL_ITEMS:
+                self._local.pop(next(iter(self._local)))
+
+
+PREVIEW_CACHE = PreviewCache()
 
 
 def _sanitize_filename(name):
@@ -238,6 +320,193 @@ def _json_body():
     return data
 
 
+def _build_preview_cache_id(content, date_str, title, cfg):
+    payload = {
+        "content": content or "",
+        "title": title or "",
+        "date": date_str or "",
+        "config": cfg or {},
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _get_admin_token():
+    return (os.environ.get("POSTER_ADMIN_TOKEN") or ADMIN_TOKEN or "").strip()
+
+
+def _is_admin_request():
+    token = _get_admin_token()
+    if not token:
+        return False, "管理员功能未启用，请先设置 POSTER_ADMIN_TOKEN"
+    header_token = (request.headers.get("X-Admin-Token") or "").strip()
+    auth = (request.headers.get("Authorization") or "").strip()
+    bearer = ""
+    if auth.lower().startswith("bearer "):
+        bearer = auth[7:].strip()
+    provided = header_token or bearer
+    if provided and provided == token:
+        return True, ""
+    return False, "管理员鉴权失败"
+
+
+def _collect_all_user_ids():
+    ids = set()
+    users = _load_users()
+    ids.update(_sanitize_user_id(uid) for uid in users.keys())
+    if os.path.isdir(USER_CONFIG_DIR):
+        for name in os.listdir(USER_CONFIG_DIR):
+            if not name.lower().endswith(".json"):
+                continue
+            uid = _sanitize_user_id(os.path.splitext(name)[0])
+            if uid:
+                ids.add(uid)
+    with _OUTPUT_META_LOCK:
+        idx = _load_output_index()
+    for meta in idx.values():
+        uid = _sanitize_user_id((meta or {}).get("user_id", ""))
+        if uid:
+            ids.add(uid)
+    ids.discard("")
+    return sorted(ids)
+
+
+def _collect_output_counts():
+    counts = {}
+    with _OUTPUT_META_LOCK:
+        idx = _load_output_index()
+    for meta in idx.values():
+        uid = _sanitize_user_id((meta or {}).get("user_id", ""))
+        if not uid:
+            continue
+        counts[uid] = counts.get(uid, 0) + 1
+    return counts
+
+
+def _user_last_active_timestamp(user_id):
+    uid = _sanitize_user_id(user_id)
+    if not uid:
+        return 0.0
+    ts = 0.0
+    cfg_path = _get_user_config_path(uid)
+    if os.path.isfile(cfg_path):
+        try:
+            ts = max(ts, os.path.getmtime(cfg_path))
+        except Exception:
+            pass
+    with _OUTPUT_META_LOCK:
+        idx = _load_output_index()
+    for meta in idx.values():
+        if _sanitize_user_id((meta or {}).get("user_id", "")) != uid:
+            continue
+        created = str((meta or {}).get("created_at", "")).strip()
+        if not created:
+            continue
+        try:
+            parsed = datetime.datetime.fromisoformat(created)
+            ts = max(ts, parsed.timestamp())
+        except Exception:
+            pass
+    return ts
+
+
+def _admin_delete_user_data(user_id, include_outputs=True):
+    uid = _sanitize_user_id(user_id)
+    if not uid:
+        raise ValueError("用户ID无效")
+
+    deleted = {
+        "user_id": uid,
+        "removed_user": False,
+        "removed_config": False,
+        "removed_outputs": 0,
+        "removed_output_dir": False,
+        "removed_index_entries": 0,
+    }
+
+    users = _load_users()
+    if uid in users:
+        users.pop(uid, None)
+        _save_users(users)
+        deleted["removed_user"] = True
+
+    cfg_path = _get_user_config_path(uid)
+    if os.path.isfile(cfg_path):
+        try:
+            os.remove(cfg_path)
+            deleted["removed_config"] = True
+        except Exception:
+            pass
+
+    removed_relpaths = []
+    with _OUTPUT_META_LOCK:
+        idx = _load_output_index()
+        kept = {}
+        for rel, meta in idx.items():
+            owner = _sanitize_user_id((meta or {}).get("user_id", ""))
+            if owner == uid:
+                removed_relpaths.append(str(rel))
+            else:
+                kept[rel] = meta
+        if len(kept) != len(idx):
+            _save_output_index(kept)
+        deleted["removed_index_entries"] = len(idx) - len(kept)
+
+    if include_outputs:
+        for rel in removed_relpaths:
+            abs_path = _safe_join_data_path(rel)
+            if not abs_path or not os.path.isfile(abs_path):
+                continue
+            try:
+                os.remove(abs_path)
+                deleted["removed_outputs"] += 1
+            except Exception:
+                pass
+        user_output_dir = os.path.join(OUTPUT_DIR, uid)
+        if os.path.isdir(user_output_dir):
+            try:
+                shutil.rmtree(user_output_dir)
+                deleted["removed_output_dir"] = True
+            except Exception:
+                pass
+    return deleted
+
+
+def _export_all_data_snapshot():
+    users = _load_users()
+    user_ids = _collect_all_user_ids()
+    output_counts = _collect_output_counts()
+    user_configs = {}
+    for uid in user_ids:
+        cfg_path = _get_user_config_path(uid)
+        if not os.path.isfile(cfg_path):
+            continue
+        user_configs[uid] = load_config(cfg_path)
+    with _OUTPUT_META_LOCK:
+        output_index = _load_output_index()
+    return {
+        "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "data_dir": DATA_DIR,
+        "users": users,
+        "user_configs": user_configs,
+        "output_index": output_index,
+        "user_ids": user_ids,
+        "output_counts": output_counts,
+    }
+
+
+def _collect_backup_files(include_outputs):
+    selected = []
+    for root, _, files in os.walk(DATA_DIR):
+        for name in files:
+            abs_path = os.path.join(root, name)
+            rel = os.path.relpath(abs_path, DATA_DIR).replace("\\", "/")
+            if not include_outputs and rel.startswith("outputs/"):
+                continue
+            selected.append((abs_path, rel))
+    return selected
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -251,6 +520,11 @@ def terms():
 @app.route("/privacy")
 def privacy():
     return render_template("privacy.html")
+
+
+@app.route("/admin")
+def admin():
+    return render_template("admin.html")
 
 
 @app.get("/favicon.ico")
@@ -337,6 +611,161 @@ def api_init():
     )
 
 
+@app.get("/api/admin/users")
+def api_admin_users():
+    ok, msg = _is_admin_request()
+    if not ok:
+        return jsonify({"error": msg}), 403
+    users = _load_users()
+    output_counts = _collect_output_counts()
+    rows = []
+    for uid in _collect_all_user_ids():
+        cfg_path = _get_user_config_path(uid)
+        last_active_ts = _user_last_active_timestamp(uid)
+        rows.append(
+            {
+                "user_id": uid,
+                "display_user_id": _display_user_id(uid),
+                "is_guest": _is_guest_user(uid),
+                "has_password": bool(users.get(uid)),
+                "has_config": os.path.isfile(cfg_path),
+                "output_count": int(output_counts.get(uid, 0)),
+                "last_active": datetime.datetime.fromtimestamp(last_active_ts).isoformat(timespec="seconds")
+                if last_active_ts
+                else "",
+            }
+        )
+    return jsonify({"users": rows, "total": len(rows)})
+
+
+@app.get("/api/admin/export")
+def api_admin_export():
+    ok, msg = _is_admin_request()
+    if not ok:
+        return jsonify({"error": msg}), 403
+    snapshot = _export_all_data_snapshot()
+    download = str(request.args.get("download", "0")).strip().lower() in {"1", "true", "yes"}
+    if not download:
+        return jsonify(snapshot)
+    payload = json.dumps(snapshot, ensure_ascii=False, indent=2).encode("utf-8")
+    buf = io.BytesIO(payload)
+    buf.seek(0)
+    filename = f"poster_export_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    return send_file(buf, mimetype="application/json", as_attachment=True, download_name=filename)
+
+
+@app.get("/api/admin/backup")
+def api_admin_backup():
+    ok, msg = _is_admin_request()
+    if not ok:
+        return jsonify({"error": msg}), 403
+    include_outputs = str(request.args.get("include_outputs", "1")).strip().lower() not in {"0", "false", "no"}
+    files = _collect_backup_files(include_outputs)
+    snapshot = _export_all_data_snapshot()
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json.dumps(snapshot, ensure_ascii=False, indent=2))
+        for abs_path, rel_path in files:
+            if not os.path.isfile(abs_path):
+                continue
+            zf.write(abs_path, arcname=rel_path)
+    zip_buf.seek(0)
+    filename = f"poster_backup_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    return send_file(zip_buf, mimetype="application/zip", as_attachment=True, download_name=filename)
+
+
+@app.post("/api/admin/users/<user_id>/password")
+def api_admin_user_password(user_id):
+    ok, msg = _is_admin_request()
+    if not ok:
+        return jsonify({"error": msg}), 403
+    uid = _sanitize_user_id(user_id)
+    if not uid:
+        return jsonify({"error": "用户ID无效"}), 400
+    try:
+        data = _json_body()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    password = str(data.get("password", "")).strip()
+    if len(password) < 4:
+        return jsonify({"error": "密码至少 4 位"}), 400
+    users = _load_users()
+    users[uid] = generate_password_hash(password)
+    _save_users(users)
+    return jsonify({"ok": True, "user_id": uid})
+
+
+@app.patch("/api/admin/users/<user_id>/config")
+def api_admin_user_config(user_id):
+    ok, msg = _is_admin_request()
+    if not ok:
+        return jsonify({"error": msg}), 403
+    uid = _sanitize_user_id(user_id)
+    if not uid:
+        return jsonify({"error": "用户ID无效"}), 400
+    try:
+        data = _json_body()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    cfg_patch = data.get("config")
+    if not isinstance(cfg_patch, dict):
+        return jsonify({"error": "config 必须是对象"}), 400
+    mode = str(data.get("mode", "merge")).strip().lower()
+    if mode not in {"merge", "replace"}:
+        return jsonify({"error": "mode 仅支持 merge/replace"}), 400
+    target_path = _get_user_config_path(uid)
+    if mode == "replace":
+        cfg = {**DEFAULT_CONFIG, **cfg_patch}
+    else:
+        base = load_config(target_path) if os.path.isfile(target_path) else load_config(CONFIG_PATH)
+        cfg = {**base, **cfg_patch}
+    save_config(target_path, cfg)
+    return jsonify({"ok": True, "user_id": uid, "config": cfg})
+
+
+@app.delete("/api/admin/users/<user_id>")
+def api_admin_delete_user(user_id):
+    ok, msg = _is_admin_request()
+    if not ok:
+        return jsonify({"error": msg}), 403
+    include_outputs = str(request.args.get("include_outputs", "1")).strip().lower() not in {"0", "false", "no"}
+    try:
+        deleted = _admin_delete_user_data(user_id, include_outputs=include_outputs)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True, "deleted": deleted})
+
+
+@app.post("/api/admin/guests/cleanup")
+def api_admin_cleanup_guests():
+    ok, msg = _is_admin_request()
+    if not ok:
+        return jsonify({"error": msg}), 403
+    try:
+        data = _json_body()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    try:
+        days = int(data.get("days", 30))
+    except (TypeError, ValueError):
+        return jsonify({"error": "days 必须是数字"}), 400
+    if days < 0 or days > 3650:
+        return jsonify({"error": "days 范围应在 0-3650"}), 400
+    include_outputs = bool(data.get("include_outputs", False))
+    now = time.time()
+    cutoff = now - days * 86400
+    removed = []
+    for uid in _collect_all_user_ids():
+        if not _is_guest_user(uid):
+            continue
+        last_ts = _user_last_active_timestamp(uid)
+        if last_ts and last_ts > cutoff:
+            continue
+        deleted = _admin_delete_user_data(uid, include_outputs=include_outputs)
+        removed.append(deleted["user_id"])
+    return jsonify({"ok": True, "days": days, "include_outputs": include_outputs, "removed_count": len(removed), "removed_user_ids": removed})
+
+
 @app.post("/api/upload")
 def api_upload():
     if "file" not in request.files:
@@ -367,14 +796,43 @@ def api_preview():
     date_str = format_date_input(data.get("date", ""))
     try:
         cfg = _normalize_cfg_paths({**_load_user_config(uid), **data.get("config", {})})
-        img = draw_poster(content, date_str, title, cfg)
-        buf = io.BytesIO()
-        img.convert("RGB").save(buf, "PNG")
-        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        cache_id = _build_preview_cache_id(content, date_str, title, cfg)
+        png_bytes = PREVIEW_CACHE.get(uid, cache_id)
+        cache_hit = png_bytes is not None
+        if png_bytes is None:
+            img = draw_poster(content, date_str, title, cfg)
+            buf = io.BytesIO()
+            img.convert("RGB").save(buf, "PNG")
+            png_bytes = buf.getvalue()
+            PREVIEW_CACHE.set(uid, cache_id, png_bytes)
         valid, warnings = validate_content(content)
-        return jsonify({"image": f"data:image/png;base64,{b64}", "date": date_str, "valid": valid, "warnings": warnings})
+        image_url = f"/api/preview-image/{cache_id}"
+        return jsonify(
+            {
+                "image": image_url,
+                "image_url": image_url,
+                "cache_hit": cache_hit,
+                "date": date_str,
+                "valid": valid,
+                "warnings": warnings,
+            }
+        )
     except Exception:
         return jsonify({"error": "预览生成失败，请检查图片素材和参数后重试"}), 500
+
+
+@app.get("/api/preview-image/<cache_id>")
+def api_preview_image(cache_id):
+    uid = _ensure_user_id()
+    if not PREVIEW_ID_RE.match(str(cache_id or "")):
+        return jsonify({"error": "预览标识无效"}), 400
+    data = PREVIEW_CACHE.get(uid, cache_id)
+    if not data:
+        return jsonify({"error": "预览已过期，请重新生成"}), 404
+    resp = Response(data, mimetype="image/png")
+    resp.headers["Cache-Control"] = f"private, max-age={PREVIEW_CACHE_TTL_SECONDS}"
+    resp.headers["ETag"] = cache_id
+    return resp
 
 
 @app.post("/api/generate")
@@ -493,3 +951,4 @@ def api_batch_adjust():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5173, debug=False)
+

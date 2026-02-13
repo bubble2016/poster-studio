@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理后台 | 海报系统</title>
+  <link rel="icon" href="/favicon.ico?v=20260213" type="image/x-icon" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f2f6fb;
+      --ink: #0f172a;
+      --muted: #5b6478;
+      --line: #d6deea;
+      --primary: #0d6efd;
+      --card: #ffffff;
+      --ok: #0f9d58;
+      --err: #c62828;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Noto Sans SC", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% -20%, #cfe1ff 0%, transparent 45%),
+        radial-gradient(circle at 120% 20%, #d7f4e7 0%, transparent 40%),
+        var(--bg);
+    }
+    .shell {
+      width: min(1120px, calc(100% - 24px));
+      margin: 24px auto 40px;
+      display: grid;
+      gap: 16px;
+    }
+    .top {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .title {
+      margin: 0;
+      font-family: Outfit, sans-serif;
+      font-size: clamp(1.1rem, 2.2vw, 1.5rem);
+    }
+    .sub {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: .92rem;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .token {
+      flex: 1;
+      min-width: 260px;
+      height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0 12px;
+      font-size: 16px;
+      font-family: inherit;
+    }
+    button {
+      height: 42px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 0 14px;
+      font-size: .92rem;
+      font-weight: 600;
+      font-family: "Noto Sans SC", sans-serif;
+      cursor: pointer;
+      background: #eef4ff;
+      color: #1a3b78;
+    }
+    button.primary { background: var(--primary); color: #fff; }
+    button.ghost { background: #fff; border-color: var(--line); color: #1f2940; }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+    .status {
+      margin-top: 10px;
+      font-size: .9rem;
+      color: var(--muted);
+      min-height: 20px;
+    }
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--err); }
+    .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; min-width: 760px; background: #fff; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #e9eef6; font-size: .9rem; }
+    th { background: #f7faff; color: #33415f; font-weight: 700; }
+    tbody tr:hover { background: #f9fbff; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85rem; }
+    .hint { color: var(--muted); font-size: .86rem; margin: 0; }
+    .pill {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 9px;
+      font-size: .78rem;
+      background: #edf2ff;
+      color: #31427a;
+    }
+    @media (max-width: 720px) {
+      .shell { width: calc(100% - 16px); margin-top: 12px; }
+      .top, .panel { padding: 12px; border-radius: 12px; }
+      .token { min-width: 0; width: 100%; }
+      .row { align-items: stretch; }
+      button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="top">
+      <div>
+        <h1 class="title">管理后台</h1>
+        <p class="sub">用户总览与数据导出/备份</p>
+      </div>
+      <a href="/" class="pill">返回主系统</a>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <input id="tokenInput" class="token" type="password" placeholder="输入 POSTER_ADMIN_TOKEN" autocomplete="off" />
+        <button id="loadUsersBtn" class="primary" type="button">刷新用户列表</button>
+      </div>
+      <p class="hint">支持请求头 `X-Admin-Token`，令牌仅保存在当前浏览器本地。</p>
+      <div id="statusText" class="status">等待操作</div>
+    </section>
+
+    <section class="panel">
+      <div class="row" style="margin-bottom: 10px;">
+        <button id="exportJsonBtn" class="ghost" type="button">查看 JSON</button>
+        <button id="downloadExportBtn" class="ghost" type="button">下载 JSON</button>
+        <button id="downloadBackupBtn" class="ghost" type="button">下载完整备份</button>
+        <button id="downloadLiteBackupBtn" class="ghost" type="button">下载轻量备份</button>
+      </div>
+      <p class="hint">轻量备份不包含 `outputs/`，适合快速归档配置。</p>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <input id="cleanupDaysInput" class="token" type="number" min="0" max="3650" value="30" placeholder="清理多少天前未活跃的游客" />
+        <button id="cleanupGuestsBtn" class="ghost" type="button">清理游客（保留导出文件）</button>
+        <button id="cleanupGuestsWithOutputsBtn" class="ghost" type="button">清理游客（含导出文件）</button>
+      </div>
+      <p class="hint">仅清理 `guest_` 账号。按最后活跃时间判断（配置文件或导出记录）。</p>
+    </section>
+
+    <section class="panel">
+      <div class="row" style="justify-content: space-between; margin-bottom: 10px;">
+        <strong>用户列表</strong>
+        <span id="totalText" class="pill">总数 0</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>用户ID</th>
+              <th>显示名</th>
+              <th>游客</th>
+              <th>已设密码</th>
+              <th>有配置</th>
+              <th>导出数</th>
+              <th>最后活跃</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="usersBody">
+            <tr><td colspan="8" style="color:#6b7280;">暂无数据</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="/static/admin.js?v=20260213a"></script>
+</body>
+</html>
