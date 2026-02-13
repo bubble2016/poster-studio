@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=20260213e" />
+  <link rel="stylesheet" href="/static/style.css?v=20260213h" />
 </head>
 <body>
   <div class="bg-orb orb-a"></div>
@@ -69,7 +69,38 @@
             <button class="mini-btn" id="formatBtn">自动格式化</button>
             <button class="mini-btn" id="batchBtn">批量调价</button>
           </div>
-          <label>内容<textarea id="contentInput" rows="10"></textarea></label>
+          <textarea id="contentInput" rows="10" hidden placeholder="请输入正文内容"></textarea>
+          <div id="priceEditorPanel">
+            <div class="section-head"><h2>价格表内容</h2></div>
+            <p class="price-editor-tip">直接在下方编辑，生成时会自动转为正文格式。</p>
+            <div class="price-editor-table-wrap">
+              <table class="price-editor-table">
+                <colgroup>
+                  <col class="col-name" />
+                  <col class="col-mode" />
+                  <col class="col-value" />
+                  <col class="col-unit" />
+                  <col class="col-action" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>品类</th>
+                    <th>类型</th>
+                    <th>值</th>
+                    <th>单位</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="priceTableBody"></tbody>
+              </table>
+            </div>
+            <div class="price-editor-add-wrap">
+              <button class="mini-btn" id="addPriceRowBtn" type="button">新增一行</button>
+            </div>
+            <label>附加说明（非价格内容）
+              <textarea id="priceEditorExtra" rows="6" placeholder="例如：温馨提示、假期通知等"></textarea>
+            </label>
+          </div>
           <div class="stats" id="statsText">0 字 · 0 行</div>
         </section>
 
@@ -295,6 +326,6 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=20260213e"></script>
+  <script src="/static/app.js?v=20260213h"></script>
 </body>
 </html>

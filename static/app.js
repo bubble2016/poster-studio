@@ -2,12 +2,14 @@
   config: {},
   presets: [],
   systemTemplates: {},
+  systemTemplateMeta: {},
   currentUser: "",
   isGuest: true,
   guestRegisterTipShown: false,
   holidayBgBackup: null,
   holidayBgApplied: false,
   logoCrop: null,
+  priceEditorRows: [],
   previewSeq: 0,
 };
 
@@ -25,6 +27,8 @@ const GUEST_DRAFT_STORAGE_KEY = "poster_guest_draft_v1";
 const GUEST_DRAFT_SCHEMA_VERSION = 1;
 const GUEST_DRAFT_EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
 const SETTINGS_TIP_SEEN_KEY = "poster_settings_tip_seen_v1";
+const PRICE_LINE_PATTERN = /^\s*【([^】]+)】\s*[：:]\s*(.+?)\s*$/;
+const PRICE_UNIT_DEFAULT = "元/吨";
 const RANGE_VALUE_FIELDS = [
   { inputId: "bgBlur", valueId: "bgBlurValue", format: (v) => `${Math.round(Number(v) || 0)}` },
   { inputId: "bgBrightness", valueId: "bgBrightnessValue", format: (v) => `${(Number(v) || 0).toFixed(2)}x` },
@@ -520,6 +524,7 @@ function bindFromConfig(cfg) {
   $("titleInput").value = cfg.last_title || "调价通知";
   $("dateInput").value = cfg.last_date || "今天";
   $("contentInput").value = cfg.last_content || "";
+  syncMainPriceEditorFromContent();
 
   $("themeColor").value = cfg.theme_color || "#B22222";
   syncThemeColorUi($("themeColor").value);
@@ -638,13 +643,228 @@ function applyTemplateByName(name) {
   if (state.systemTemplates[name]) {
     $("contentInput").value = state.systemTemplates[name][0] || "";
     $("titleInput").value = state.systemTemplates[name][1] || $("titleInput").value;
+    syncMainPriceEditorFromContent();
     return true;
   }
   if (state.config.custom_templates?.[name]) {
     $("contentInput").value = state.config.custom_templates[name] || "";
+    syncMainPriceEditorFromContent();
     return true;
   }
   return false;
+}
+
+function createPriceRow() {
+  return { name: "", mode: "number", value: "", min: "", max: "", text: "", unit: PRICE_UNIT_DEFAULT };
+}
+
+function parsePriceLineValue(rawValue) {
+  const raw = String(rawValue || "").trim();
+  if (!raw) return { mode: "text", text: "", unit: PRICE_UNIT_DEFAULT };
+
+  let body = raw;
+  let unit = "";
+  const unitMatch = body.match(/\s*(元\s*\/\s*吨)\s*$/);
+  if (unitMatch) {
+    unit = PRICE_UNIT_DEFAULT;
+    body = body.slice(0, unitMatch.index).trim();
+  }
+
+  const rangeMatch = body.match(/^(-?\d+(?:\.\d+)?)\s*[-~～至到]+\s*(-?\d+(?:\.\d+)?)$/);
+  if (rangeMatch) {
+    return { mode: "range", min: rangeMatch[1], max: rangeMatch[2], unit: unit || PRICE_UNIT_DEFAULT };
+  }
+
+  const numberMatch = body.match(/^(-?\d+(?:\.\d+)?)$/);
+  if (numberMatch) {
+    return { mode: "number", value: numberMatch[1], unit: unit || PRICE_UNIT_DEFAULT };
+  }
+
+  return { mode: "text", text: body, unit };
+}
+
+function parseContentToPriceEditor(content) {
+  const lines = String(content || "").replace(/\r\n/g, "\n").split("\n");
+  const rows = [];
+  const extraLines = [];
+
+  lines.forEach((line) => {
+    const match = line.match(PRICE_LINE_PATTERN);
+    if (!match) {
+      extraLines.push(line);
+      return;
+    }
+
+    const name = String(match[1] || "").trim();
+    const parsed = parsePriceLineValue(match[2] || "");
+    rows.push({
+      name,
+      mode: parsed.mode || "text",
+      value: parsed.value || "",
+      min: parsed.min || "",
+      max: parsed.max || "",
+      text: parsed.text || "",
+      unit: parsed.unit || PRICE_UNIT_DEFAULT,
+    });
+  });
+
+  return {
+    rows,
+    extra: extraLines.join("\n").replace(/^\n+|\n+$/g, ""),
+  };
+}
+
+function getPriceEditorRowsFromDom() {
+  const tbody = $("priceTableBody");
+  if (!tbody) return [];
+  const rows = [];
+
+  tbody.querySelectorAll("tr").forEach((tr) => {
+    rows.push({
+      name: tr.querySelector('[data-field="name"]')?.value?.trim() || "",
+      mode: tr.querySelector('[data-field="mode"]')?.value || "number",
+      value: tr.querySelector('[data-field="value"]')?.value?.trim() || "",
+      min: tr.querySelector('[data-field="min"]')?.value?.trim() || "",
+      max: tr.querySelector('[data-field="max"]')?.value?.trim() || "",
+      text: tr.querySelector('[data-field="text"]')?.value?.trim() || "",
+      unit: tr.querySelector('[data-field="unit"]')?.value?.trim() || "",
+    });
+  });
+
+  return rows;
+}
+
+function buildContentFromPriceEditor(rows, extra) {
+  const out = [];
+  rows.forEach((row) => {
+    const name = String(row.name || "").trim();
+    if (!name) return;
+
+    const mode = String(row.mode || "number");
+    const unit = String(row.unit || "").trim();
+    const suffix = unit ? ` ${unit}` : "";
+
+    if (mode === "range") {
+      const v1 = String(row.min || "").trim();
+      const v2 = String(row.max || "").trim();
+      if (!v1 || !v2) return;
+      out.push(`【${name}】：${v1}-${v2}${suffix}`);
+      return;
+    }
+
+    if (mode === "text") {
+      const text = String(row.text || "").trim();
+      if (!text) return;
+      out.push(`【${name}】：${text}${suffix}`);
+      return;
+    }
+
+    const value = String(row.value || "").trim();
+    if (!value) return;
+    out.push(`【${name}】：${value}${suffix}`);
+  });
+
+  const note = String(extra || "").replace(/\r\n/g, "\n").trim();
+  if (note) {
+    if (out.length) out.push("");
+    out.push(note);
+  }
+  return out.join("\n").trim();
+}
+
+function escapeAttr(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderPriceEditorTable() {
+  const tbody = $("priceTableBody");
+  if (!tbody) return;
+  if (!state.priceEditorRows.length) state.priceEditorRows = [createPriceRow()];
+
+  tbody.innerHTML = state.priceEditorRows.map((row, idx) => {
+    const mode = row.mode || "number";
+    let valueCellHtml = `<input data-field="value" value="${escapeAttr(row.value || "")}" placeholder="1350" />`;
+    if (mode === "range") {
+      valueCellHtml = `
+        <div class="price-range-wrap">
+          <input data-field="min" value="${escapeAttr(row.min || "")}" placeholder="800" />
+          <input data-field="max" value="${escapeAttr(row.max || "")}" placeholder="900" />
+        </div>
+      `;
+    } else if (mode === "text") {
+      valueCellHtml = `<input data-field="text" value="${escapeAttr(row.text || "")}" placeholder="上调5" />`;
+    }
+    return `
+      <tr data-row-index="${idx}">
+        <td><input data-field="name" value="${escapeAttr(row.name || "")}" placeholder="例如：工厂黄板" /></td>
+        <td>
+          <select data-field="mode">
+            <option value="number"${mode === "number" ? " selected" : ""}>单价</option>
+            <option value="range"${mode === "range" ? " selected" : ""}>区间</option>
+            <option value="text"${mode === "text" ? " selected" : ""}>文字</option>
+          </select>
+        </td>
+        <td>${valueCellHtml}</td>
+        <td><input data-field="unit" value="${escapeAttr(row.unit || "")}" placeholder="元/吨" /></td>
+        <td>
+          <button class="price-row-remove" data-action="remove-row" type="button" aria-label="删除此行" title="删除此行">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 3.75A2.25 2.25 0 0 0 6.75 6H4.5a1 1 0 1 0 0 2h.38l1.03 10.34A2.25 2.25 0 0 0 8.15 20.5h7.7a2.25 2.25 0 0 0 2.24-2.16L19.12 8h.38a1 1 0 1 0 0-2h-2.25A2.25 2.25 0 0 0 15 3.75H9Zm0 2h6a.25.25 0 0 1 .25.25V6h-6.5v-.25A.25.25 0 0 1 9 5.75Zm.25 5a1 1 0 0 1 1 1v4.5a1 1 0 1 1-2 0v-4.5a1 1 0 0 1 1-1Zm5.5 0a1 1 0 0 1 1 1v4.5a1 1 0 1 1-2 0v-4.5a1 1 0 0 1 1-1Z"/>
+            </svg>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function syncMainPriceEditorFromContent() {
+  const parsed = parseContentToPriceEditor($("contentInput").value);
+  state.priceEditorRows = parsed.rows.length ? parsed.rows : [createPriceRow()];
+  $("priceEditorExtra").value = parsed.extra || "";
+  renderPriceEditorTable();
+}
+
+function syncHiddenContentFromMainPriceEditor() {
+  state.priceEditorRows = getPriceEditorRowsFromDom();
+  $("contentInput").value = buildContentFromPriceEditor(state.priceEditorRows, $("priceEditorExtra").value);
+  updateStats();
+}
+
+function isHolidayTemplateName(name) {
+  const key = String(name || "");
+  const metaMap = state.systemTemplateMeta;
+  if (!metaMap || typeof metaMap !== "object") return false;
+  const meta = metaMap[key];
+  if (!meta || typeof meta !== "object") return false;
+  return meta.is_holiday === true;
+}
+
+function syncHolidayActionButtonsVisibility(isHolidayMode) {
+  const formatBtn = $("formatBtn");
+  const batchBtn = $("batchBtn");
+  if (formatBtn) formatBtn.hidden = !!isHolidayMode;
+  if (batchBtn) batchBtn.hidden = !!isHolidayMode;
+}
+
+function syncEditorModeByTemplate() {
+  const contentInput = $("contentInput");
+  const priceEditorPanel = $("priceEditorPanel");
+  const tplSel = $("templateSelect");
+  if (!contentInput || !priceEditorPanel || !tplSel) return;
+
+  const holidayMode = isHolidayTemplateName(tplSel.value);
+  if (!holidayMode) {
+    syncMainPriceEditorFromContent();
+  }
+
+  syncHolidayActionButtonsVisibility(holidayMode);
+  contentInput.hidden = !holidayMode;
+  priceEditorPanel.hidden = holidayMode;
 }
 
 function getHolidayPresetPath() {
@@ -654,13 +874,12 @@ function getHolidayPresetPath() {
   return byName?.path || "";
 }
 
-function shouldUseHolidayPreset(templateName, titleText) {
-  const text = `${templateName || ""} ${titleText || ""}`;
-  return text.includes("放假");
+function shouldUseHolidayPreset(templateName) {
+  return isHolidayTemplateName(templateName);
 }
 
 function applyHolidayPresetIfNeeded(templateName) {
-  if (!shouldUseHolidayPreset(templateName, $("titleInput").value)) {
+  if (!shouldUseHolidayPreset(templateName)) {
     if (state.holidayBgApplied && state.holidayBgBackup) {
       state.config.bg_mode = state.holidayBgBackup.bg_mode || "custom";
       state.config.bg_image_path = state.holidayBgBackup.bg_image_path || "";
@@ -902,6 +1121,7 @@ async function init() {
   const guestDraft = readGuestDraft();
   state.config = state.isGuest && guestDraft ? { ...remoteConfig, ...guestDraft } : remoteConfig;
   state.systemTemplates = data.system_templates || {};
+  state.systemTemplateMeta = data.system_template_meta || {};
   state.presets = data.presets || [];
 
   bindFromConfig(state.config);
@@ -996,6 +1216,49 @@ async function init() {
   $("closeLogoCropBtn").addEventListener("click", closeLogoCropModal);
   $("cancelLogoCropBtn").addEventListener("click", closeLogoCropModal);
   $("logoCropMask").addEventListener("click", closeLogoCropModal);
+  $("addPriceRowBtn").addEventListener("click", () => {
+    state.priceEditorRows = getPriceEditorRowsFromDom();
+    state.priceEditorRows.push(createPriceRow());
+    renderPriceEditorTable();
+    syncHiddenContentFromMainPriceEditor();
+    onType();
+  });
+  $("priceTableBody").addEventListener("click", (e) => {
+    const btn = e.target.closest('[data-action="remove-row"]');
+    if (!btn) return;
+    const tr = btn.closest("tr");
+    if (!tr) return;
+    const idx = Number(tr.dataset.rowIndex);
+    if (!Number.isInteger(idx)) return;
+    state.priceEditorRows = getPriceEditorRowsFromDom();
+    state.priceEditorRows.splice(idx, 1);
+    if (!state.priceEditorRows.length) state.priceEditorRows = [createPriceRow()];
+    renderPriceEditorTable();
+    syncHiddenContentFromMainPriceEditor();
+    onType();
+  });
+  $("priceTableBody").addEventListener("input", () => {
+    syncHiddenContentFromMainPriceEditor();
+    onType();
+  });
+  $("priceTableBody").addEventListener("change", (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.getAttribute("data-field") === "mode") {
+      state.priceEditorRows = getPriceEditorRowsFromDom();
+      renderPriceEditorTable();
+      syncHiddenContentFromMainPriceEditor();
+      onType();
+    }
+  });
+  $("priceEditorExtra").addEventListener("input", () => {
+    syncHiddenContentFromMainPriceEditor();
+    onType();
+  });
+  $("priceEditorExtra").addEventListener("change", () => {
+    syncHiddenContentFromMainPriceEditor();
+    saveGuestDraft();
+  });
   $("logoCropScale").addEventListener("input", () => {
     if (!state.logoCrop) return;
     state.logoCrop.scale = Number($("logoCropScale").value) || 1;
@@ -1167,6 +1430,7 @@ async function init() {
     try {
       const d = await api("/api/format", "POST", { content: $("contentInput").value });
       $("contentInput").value = d.content;
+      syncMainPriceEditorFromContent();
       updateStats();
       saveGuestDraft();
       await refreshPreview();
@@ -1189,6 +1453,7 @@ async function init() {
     try {
       const d = await api("/api/batch-adjust", "POST", { content: $("contentInput").value, amount });
       $("contentInput").value = d.content;
+      syncMainPriceEditorFromContent();
       updateStats();
       saveGuestDraft();
       await refreshPreview();
@@ -1196,11 +1461,11 @@ async function init() {
       showStatusError(e.message || "批量调价失败");
     }
   });
-
   $("templateSelect").addEventListener("change", async (e) => {
     const selectedName = e.target.value;
     applyTemplateByName(selectedName);
     applyHolidayPresetIfNeeded(selectedName);
+    syncEditorModeByTemplate();
     updateStats();
     saveGuestDraft();
     await refreshPreview();
@@ -1219,6 +1484,7 @@ async function init() {
       $("templateSelect").add(new Option(trimmed, trimmed));
     }
     $("templateSelect").value = trimmed;
+    syncEditorModeByTemplate();
     saveGuestDraft();
   });
 
@@ -1233,6 +1499,7 @@ async function init() {
     if ($("templateSelect").options.length > 0) {
       $("templateSelect").value = $("templateSelect").options[0].value;
       applyTemplateByName($("templateSelect").value);
+      syncEditorModeByTemplate();
       updateStats();
     }
     saveGuestDraft();
@@ -1330,6 +1597,7 @@ async function init() {
     }
   });
 
+  syncEditorModeByTemplate();
   await refreshPreview();
   syncSettingsPaneHeight();
   syncFooterNoteVisibility();

@@ -14,6 +14,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from poster_engine import (
     DEFAULT_CONFIG,
+    SYSTEM_TEMPLATE_META,
     SYSTEM_TEMPLATES,
     auto_format_content,
     batch_adjust_content,
@@ -326,7 +327,14 @@ def api_init():
     cfg = _load_user_config(uid)
     presets = PresetGenerator.get_presets(BASE_DIR)
     preset_payload = [{"name": name, "path": _public_path(path)} for name, path in presets.items()]
-    return jsonify({"config": cfg, "system_templates": SYSTEM_TEMPLATES, "presets": preset_payload})
+    return jsonify(
+        {
+            "config": cfg,
+            "system_templates": SYSTEM_TEMPLATES,
+            "system_template_meta": SYSTEM_TEMPLATE_META,
+            "presets": preset_payload,
+        }
+    )
 
 
 @app.post("/api/upload")

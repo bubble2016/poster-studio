@@ -111,6 +111,11 @@ SYSTEM_TEMPLATES = {
         "放假通知",
     ),
 }
+SYSTEM_TEMPLATE_META = {
+    "报价模板": {"is_holiday": False},
+    "调价模板": {"is_holiday": False},
+    "放假模板": {"is_holiday": True},
+}
 DEFAULT_CONFIG = {
     "shop_name": "云泽西关打包站",
     "shop_name_hist": ["云泽西关打包站"],
