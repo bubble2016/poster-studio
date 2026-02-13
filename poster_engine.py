@@ -706,47 +706,207 @@ def draw_poster(content, date_str, title, cfg):
         dc.ellipse((cx - 10, cy + ch // 2 - 10, cx + 10, cy + ch // 2 + 10), fill=(0, 0, 0, 0))
         dc.ellipse((cx + cw - 10, cy + ch // 2 - 10, cx + cw + 10, cy + ch // 2 + 10), fill=(0, 0, 0, 0))
     elif style == "double":
+        back_dx, back_dy = 30, 34
+        back_alpha = min(255, int(alpha * 0.9) + 28)
         shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        ImageDraw.Draw(shadow).rounded_rectangle([(cx + 18, cy + 24), (cx + cw + 18, cy + ch + 24)], radius=42, fill=(0, 0, 0, 60))
-        img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(20)))
-        dc.rounded_rectangle([(cx + 20, cy + 20), (cx + cw + 20, cy + ch + 20)], radius=40, fill=(235, 235, 235, alpha))
-        dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=40, fill=(255, 255, 255, alpha))
+        sd = ImageDraw.Draw(shadow)
+        # 后层整体阴影：拉开与背景的距离
+        sd.rounded_rectangle(
+            [(cx + back_dx + 8, cy + back_dy + 10), (cx + cw + back_dx + 8, cy + ch + back_dy + 10)],
+            radius=42,
+            fill=(0, 0, 0, 76),
+        )
+        # 前层对后层的投影：强调两层间距
+        sd.rounded_rectangle(
+            [(cx + 10, cy + 12), (cx + cw + 10, cy + ch + 12)],
+            radius=40,
+            fill=(0, 0, 0, 58),
+        )
+        img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(24)))
+
+        dc.rounded_rectangle(
+            [(cx + back_dx, cy + back_dy), (cx + cw + back_dx, cy + ch + back_dy)],
+            radius=40,
+            fill=(232, 236, 243, back_alpha),
+            outline=(201, 210, 224, min(255, alpha)),
+            width=2,
+        )
+        dc.rounded_rectangle(
+            [(cx, cy), (cx + cw, cy + ch)],
+            radius=40,
+            fill=(255, 255, 255, alpha),
+            outline=(238, 241, 247, min(255, alpha + 10)),
+            width=2,
+        )
+
+        double_overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        dod = ImageDraw.Draw(double_overlay)
+        # 后层顶部轻微高光，避免灰板感
+        for i in range(16):
+            a = int(42 * (1 - i / 16))
+            dod.line(
+                [(cx + back_dx + 40, cy + back_dy + 10 + i), (cx + cw + back_dx - 40, cy + back_dy + 10 + i)],
+                fill=(255, 255, 255, a),
+                width=1,
+            )
+        # 前层右下边缘投影，让层级更清晰
+        for i in range(24):
+            a = int(54 * (1 - i / 24))
+            dod.line(
+                [(cx + cw + 2 + i, cy + 28 + i), (cx + cw + 2 + i, cy + ch - 36)],
+                fill=(132, 140, 154, a),
+                width=2,
+            )
+            dod.line(
+                [(cx + 32 + i, cy + ch + 2 + i), (cx + cw - 38, cy + ch + 2 + i)],
+                fill=(132, 140, 154, a),
+                width=2,
+            )
+        flip_overlay = double_overlay.filter(ImageFilter.GaussianBlur(0.8))
     elif style == "block":
         for i in range(12, 0, -1):
             ImageDraw.Draw(card).rounded_rectangle([(cx + i, cy + i), (cx + cw + i, cy + ch + i)], radius=40, fill=(230, 230, 230, alpha))
         dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=40, fill=(255, 255, 255, alpha))
     elif style == "stack":
-        dc.rounded_rectangle([(cx + 12, cy + 22), (cx + cw - 12, cy + ch + 22)], radius=35, fill=(245, 245, 245, alpha))
-        dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=40, fill=(255, 255, 255, alpha))
+        back_dx, back_dy = -24, 34
+        back_angle = -2.8
+        back_alpha = min(255, int(alpha * 0.9) + 24)
+
+        shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        sd = ImageDraw.Draw(shadow)
+        # 底层纸张整体阴影 + 顶层落影，强化两层距离。
+        sd.rounded_rectangle(
+            [(cx + back_dx + 18, cy + back_dy + 16), (cx + cw + back_dx + 18, cy + ch + back_dy + 16)],
+            radius=40,
+            fill=(0, 0, 0, 78),
+        )
+        sd.rounded_rectangle(
+            [(cx + 12, cy + 14), (cx + cw + 12, cy + ch + 14)],
+            radius=40,
+            fill=(0, 0, 0, 56),
+        )
+        img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(20)))
+
+        # 底层纸张做轻微旋转，模拟“随意放置”。
+        pad = 88
+        back_sheet = Image.new("RGBA", (cw + pad * 2, ch + pad * 2), (0, 0, 0, 0))
+        bsd = ImageDraw.Draw(back_sheet)
+        bsd.rounded_rectangle(
+            [(pad, pad), (pad + cw, pad + ch)],
+            radius=38,
+            fill=(234, 238, 244, back_alpha),
+            outline=(198, 208, 222, min(255, alpha)),
+            width=2,
+        )
+        for i in range(12):
+            a = int(42 * (1 - i / 12))
+            bsd.line(
+                [(pad + 34, pad + 8 + i), (pad + cw - 34, pad + 8 + i)],
+                fill=(255, 255, 255, a),
+                width=1,
+            )
+        back_rotated = back_sheet.rotate(back_angle, resample=Image.Resampling.BICUBIC, expand=True)
+        off_x = cx + back_dx - (back_rotated.width - back_sheet.width) // 2 - pad
+        off_y = cy + back_dy - (back_rotated.height - back_sheet.height) // 2 - pad
+        card.alpha_composite(back_rotated, (int(off_x), int(off_y)))
+
+        dc.rounded_rectangle(
+            [(cx, cy), (cx + cw, cy + ch)],
+            radius=40,
+            fill=(255, 255, 255, alpha),
+            outline=(238, 241, 247, min(255, alpha + 10)),
+            width=2,
+        )
+
+        stack_overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        sod = ImageDraw.Draw(stack_overlay)
+        # 顶层右/下边缘细投影，让“压在上面”的感觉更明显。
+        for i in range(22):
+            a = int(56 * (1 - i / 22))
+            sod.line(
+                [(cx + cw + 2 + i, cy + 34 + i), (cx + cw + 2 + i, cy + ch - 42)],
+                fill=(126, 136, 152, a),
+                width=2,
+            )
+            sod.line(
+                [(cx + 42 + i, cy + ch + 2 + i), (cx + cw - 44, cy + ch + 2 + i)],
+                fill=(126, 136, 152, a),
+                width=2,
+            )
+        flip_overlay = stack_overlay.filter(ImageFilter.GaussianBlur(0.8))
     elif style == "flip":
         shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         ImageDraw.Draw(shadow).rounded_rectangle([(cx + 14, cy + 18), (cx + cw + 14, cy + ch + 18)], radius=42, fill=(0, 0, 0, 55))
         img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(16)))
         dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=40, fill=(255, 255, 255, alpha))
-        fs = 210
+        fs = 216
+        # 右下角挖空：底部不再是纸张，直接透出背景图。
+        dc.polygon([(cx + cw, cy + ch), (cx + cw, cy + ch - fs), (cx + cw - fs, cy + ch)], fill=(0, 0, 0, 0))
+
         fold = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         fd = ImageDraw.Draw(fold)
-        # 折角正面：亮面
-        fd.polygon([(cx + cw, cy + ch), (cx + cw, cy + ch - fs), (cx + cw - fs, cy + ch)], fill=(248, 248, 248, min(255, alpha + 12)))
-        # 折角背面：更暗，形成纸张厚度感
-        inner = int(fs * 0.56)
-        fd.polygon([(cx + cw, cy + ch), (cx + cw, cy + ch - inner), (cx + cw - inner, cy + ch)], fill=(224, 224, 224, 236))
-        # 折痕
-        fd.line([(cx + cw - fs, cy + ch), (cx + cw, cy + ch - fs)], fill=(194, 194, 194, 208), width=3)
-        # 折角渐变细节
-        for i in range(fs):
-            t = i / max(1, fs - 1)
-            shade = int(250 - 36 * t)
-            a = int(90 * (1 - t))
-            fd.line([(cx + cw - i, cy + ch), (cx + cw, cy + ch - i)], fill=(shade, shade, shade, a), width=1)
-        # 折角在卡片上的投影
-        for i in range(28):
-            a = int(34 * (1 - i / 28))
+
+        # 折页投影：落在背景与卡片边缘上，增强翻页悬浮感。
+        for i in range(34):
+            a = int(46 * (1 - i / 34))
             fd.line(
-                [(cx + cw - fs - 10 + i, cy + ch - 2), (cx + cw - 2, cy + ch - fs - 10 + i)],
-                fill=(120, 120, 120, a),
+                [(cx + cw - fs - 8 + i, cy + ch + 2 + i // 3), (cx + cw + 2, cy + ch - fs - 8 + i)],
+                fill=(88, 95, 108, a),
                 width=2,
             )
+
+        # 抗锯齿折页：局部 4x 超采样后缩放回原图。
+        fold_pad = 26
+        fold_inset = 12
+        tile_left = cx + cw - fs - fold_pad
+        tile_top = cy + ch - fs - fold_pad
+        tile_right = cx + cw + fold_pad
+        tile_bottom = cy + ch + fold_pad
+        tile_w = max(1, tile_right - tile_left)
+        tile_h = max(1, tile_bottom - tile_top)
+        scale = 4
+        hi = Image.new("RGBA", (tile_w * scale, tile_h * scale), (0, 0, 0, 0))
+        hd = ImageDraw.Draw(hi)
+
+        def hp(px, py):
+            return ((px - tile_left) * scale, (py - tile_top) * scale)
+
+        p_corner = (cx + cw - 2, cy + ch - 2)
+        p_top = (cx + cw - 2, cy + ch - fs + fold_inset)
+        p_left = (cx + cw - fs + fold_inset, cy + ch - 2)
+        p_inner = (cx + cw - int(fs * 0.54), cy + ch - int(fs * 0.54))
+
+        # 正面折页（亮）
+        hd.polygon([hp(*p_corner), hp(*p_top), hp(*p_left)], fill=(248, 248, 248, min(255, alpha + 16)))
+        # 背面折页（暗）
+        hd.polygon([hp(*p_corner), hp(*p_top), hp(*p_inner)], fill=(222, 224, 228, 236))
+
+        # 折痕线
+        hd.line([hp(*p_left), hp(*p_top)], fill=(184, 188, 196, 220), width=max(3, scale * 2))
+
+        # 亮面渐变
+        grad_steps = fs - fold_inset - 4
+        for i in range(max(1, grad_steps)):
+            t = i / max(1, grad_steps - 1)
+            shade = int(255 - 42 * t)
+            a = int(92 * (1 - t))
+            x1 = cx + cw - 2 - i
+            y1 = cy + ch - 2
+            x2 = cx + cw - 2
+            y2 = cy + ch - 2 - i
+            hd.line([hp(x1, y1), hp(x2, y2)], fill=(shade, shade, shade, a), width=scale)
+
+        # 边缘高光
+        for i in range(8):
+            a = int(68 * (1 - i / 8))
+            hd.line(
+                [hp(cx + cw - fs + fold_inset + i, cy + ch - 2), hp(cx + cw - 2, cy + ch - fs + fold_inset + i)],
+                fill=(255, 255, 255, a),
+                width=scale,
+            )
+
+        aa_tile = hi.resize((tile_w, tile_h), Image.Resampling.LANCZOS)
+        fold.alpha_composite(aa_tile, (tile_left, tile_top))
         flip_overlay = fold.filter(ImageFilter.GaussianBlur(0.6))
     elif style == "aurora":
         shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
@@ -921,7 +1081,7 @@ def draw_poster(content, date_str, title, cfg):
         ImageDraw.Draw(mask).rounded_rectangle([(0, 0), qr.size], radius=15, fill=255)
         img.paste(qr, (qx, qy), mask)
         rx = cx + cw - 60
-        draw.text((rx, qy + 10), cfg.get("shop_name", ""), font=get_font(42, True), fill=("#F4F7FD" if is_dark_style else "#444"), anchor="rt")
+        draw.text((rx, qy + 10), cfg.get("shop_name", ""), font=get_font(44, True), fill=("#F4F7FD" if is_dark_style else "#444"), anchor="rt")
         if cfg.get("phone"):
             draw.text((rx, qy + 95), f"电话：{cfg['phone']}", font=get_font(36), fill=("#AAB6C5" if is_dark_style else "#888"), anchor="rt")
         if cfg.get("address"):
@@ -929,7 +1089,7 @@ def draw_poster(content, date_str, title, cfg):
         draw.text((w // 2, fy + 400), cfg.get("slogan", ""), font=get_font(35, True), fill=(theme_unit if is_dark_style else "#5CAF5F"), anchor="mm")
     else:
         cy2 = fy + 60
-        draw.text((w // 2, cy2), cfg.get("shop_name", ""), font=get_font(40, True), fill=("#F4F7FD" if is_dark_style else "#444"), anchor="mm")
+        draw.text((w // 2, cy2), cfg.get("shop_name", ""), font=get_font(42, True), fill=("#F4F7FD" if is_dark_style else "#444"), anchor="mm")
         cy2 += 80
         if cfg.get("phone"):
             draw.text((w // 2, cy2), f"电话：{cfg['phone']}", font=get_font(36), fill=("#AAB6C5" if is_dark_style else "#999"), anchor="mm")

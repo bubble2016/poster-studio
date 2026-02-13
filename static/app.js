@@ -95,6 +95,7 @@ function syncSettingsMenuUi() {
   const userEl = $("settingsMenuUser");
   const authBtn = $("settingsMenuAuthBtn");
   const clearGuestDraftBtn = $("clearGuestDraftBtn");
+  const panelBtn = $("settingsMenuPanelBtn");
   const loggedIn = !!(state.currentUser && !state.isGuest);
 
   if (userEl) {
@@ -115,6 +116,15 @@ function syncSettingsMenuUi() {
     const canClear = state.isGuest && hasGuestDraft();
     clearGuestDraftBtn.hidden = !state.isGuest;
     clearGuestDraftBtn.disabled = !canClear;
+  }
+
+  // 登录后将“打开设置”置于“退出登录”之前，减少误触退出。
+  if (authBtn && panelBtn && authBtn.parentNode === panelBtn.parentNode) {
+    if (loggedIn) {
+      authBtn.parentNode.insertBefore(panelBtn, authBtn);
+    } else {
+      authBtn.parentNode.insertBefore(authBtn, panelBtn);
+    }
   }
 }
 
