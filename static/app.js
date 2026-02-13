@@ -21,6 +21,9 @@ const UPLOAD_PREVIEW_FIELDS = [
 const AVAILABLE_CARD_STYLES = new Set(["single", "stack", "block", "flip", "ticket", "double", "outline_pro", "outline"]);
 const BG_VARIANTS = ["bg-variant-a", "bg-variant-b", "bg-variant-c", "bg-variant-d", "bg-variant-e"];
 const MAX_UPLOAD_MB = 15;
+const GUEST_DRAFT_STORAGE_KEY = "poster_guest_draft_v1";
+const GUEST_DRAFT_SCHEMA_VERSION = 1;
+const GUEST_DRAFT_EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
 
 function getStats(text) {
   const chars = (text || "").replace(/\s/g, "").length;
@@ -65,6 +68,7 @@ function showStatusError(msg) {
 function syncSettingsMenuUi() {
   const userEl = $("settingsMenuUser");
   const authBtn = $("settingsMenuAuthBtn");
+  const clearGuestDraftBtn = $("clearGuestDraftBtn");
   const loggedIn = !!(state.currentUser && !state.isGuest);
 
   if (userEl) {
@@ -79,6 +83,12 @@ function syncSettingsMenuUi() {
 
   if (authBtn) {
     authBtn.textContent = loggedIn ? "退出登录" : "登录 / 注册";
+  }
+
+  if (clearGuestDraftBtn) {
+    const canClear = state.isGuest && hasGuestDraft();
+    clearGuestDraftBtn.hidden = !state.isGuest;
+    clearGuestDraftBtn.disabled = !canClear;
   }
 }
 
@@ -137,6 +147,67 @@ function buildConfigPayloadForSave() {
   payload.last_date = $("dateInput").value.trim();
   payload.last_content = $("contentInput").value;
   return payload;
+}
+
+function getGuestDraftEnvelope() {
+  try {
+    const raw = localStorage.getItem(GUEST_DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      localStorage.removeItem(GUEST_DRAFT_STORAGE_KEY);
+      return null;
+    }
+    if (Number(parsed.version) !== GUEST_DRAFT_SCHEMA_VERSION) {
+      localStorage.removeItem(GUEST_DRAFT_STORAGE_KEY);
+      return null;
+    }
+    const updatedAt = Number(parsed.updated_at || 0);
+    if (!Number.isFinite(updatedAt) || updatedAt <= 0 || Date.now() - updatedAt > GUEST_DRAFT_EXPIRE_MS) {
+      localStorage.removeItem(GUEST_DRAFT_STORAGE_KEY);
+      return null;
+    }
+    if (!parsed.config || typeof parsed.config !== "object") {
+      localStorage.removeItem(GUEST_DRAFT_STORAGE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch (_) {
+    try { localStorage.removeItem(GUEST_DRAFT_STORAGE_KEY); } catch (_) {}
+    return null;
+  }
+}
+
+function hasGuestDraft() {
+  return !!getGuestDraftEnvelope();
+}
+
+function readGuestDraft() {
+  if (!state.isGuest) return null;
+  return getGuestDraftEnvelope()?.config || null;
+}
+
+function clearGuestDraft(silent = false) {
+  try {
+    localStorage.removeItem(GUEST_DRAFT_STORAGE_KEY);
+  } catch (_) {}
+  syncSettingsMenuUi();
+  if (!silent) {
+    $("statusText").textContent = "已清空访客本地草稿";
+  }
+}
+
+function saveGuestDraft() {
+  if (!state.isGuest) return;
+  try {
+    const payload = {
+      version: GUEST_DRAFT_SCHEMA_VERSION,
+      updated_at: Date.now(),
+      config: buildConfigPayloadForSave(),
+    };
+    localStorage.setItem(GUEST_DRAFT_STORAGE_KEY, JSON.stringify(payload));
+    syncSettingsMenuUi();
+  } catch (_) {}
 }
 
 async function ensureLogin() {
@@ -419,6 +490,7 @@ async function uploadFile(inputEl, key) {
   if (!res.ok) throw new Error(data.error || "上传失败");
   state.config[key] = data.path;
   renderUploadThumb(key, data.path);
+  saveGuestDraft();
 }
 
 async function uploadBlob(blob, filename, key) {
@@ -432,6 +504,7 @@ async function uploadBlob(blob, filename, key) {
   if (!res.ok) throw new Error(data.error || "上传失败");
   state.config[key] = data.path;
   renderUploadThumb(key, data.path);
+  saveGuestDraft();
 }
 
 function clamp(v, min, max) {
@@ -614,7 +687,9 @@ async function init() {
   });
 
   const data = await api("/api/init");
-  state.config = data.config;
+  const remoteConfig = data.config || {};
+  const guestDraft = readGuestDraft();
+  state.config = state.isGuest && guestDraft ? { ...remoteConfig, ...guestDraft } : remoteConfig;
   state.systemTemplates = data.system_templates || {};
   state.presets = data.presets || [];
 
@@ -651,6 +726,7 @@ async function init() {
 
   const onType = debounce(async () => {
     updateStats();
+    saveGuestDraft();
     await refreshPreview();
   }, 650);
 
@@ -675,6 +751,18 @@ async function init() {
   });
   $("settingsMenuPanelBtn").addEventListener("click", openSettingsModal);
   $("settingsMenuAuthBtn").addEventListener("click", handleSettingsMenuAuthAction);
+  $("clearGuestDraftBtn").addEventListener("click", () => {
+    closeSettingsMenu();
+    if (!state.isGuest) return;
+    if (!hasGuestDraft()) {
+      $("statusText").textContent = "当前没有可清空的访客草稿";
+      syncSettingsMenuUi();
+      return;
+    }
+    const ok = confirm("确认清空当前浏览器中的访客草稿吗？此操作不可撤销。");
+    if (!ok) return;
+    clearGuestDraft();
+  });
   document.addEventListener("click", (e) => {
     const menu = $("settingsMenu");
     const btn = $("openSettingsBtn");
@@ -736,10 +824,20 @@ async function init() {
       setLoginError("请输入至少 4 位密码");
       return;
     }
+    const guestDraft = state.isGuest ? readGuestDraft() : null;
+    const migrateGuestDraft = !!(guestDraft && confirm("检测到访客草稿。登录后是否迁移到当前账号？"));
     try {
       const d = await api("/api/login", "POST", { user_id: userId, password, merge_from_current: true });
       state.currentUser = d.display_user_id || d.user_id || userId;
       state.isGuest = !!d.is_guest;
+      if (migrateGuestDraft && guestDraft) {
+        try {
+          await api("/api/config", "POST", guestDraft);
+          clearGuestDraft(true);
+        } catch (e2) {
+          showStatusError(e2.message || "登录成功，但访客草稿迁移失败");
+        }
+      }
       syncSettingsMenuUi();
       location.reload();
     } catch (e) {
@@ -790,6 +888,7 @@ async function init() {
         state.config.bg_image_path = path;
       }
       renderUploadThumb("bg_image_path", state.config.bg_image_path || "");
+      saveGuestDraft();
       await refreshPreview();
     } catch (e2) {
       showStatusError(e2.message || "背景切换失败");
@@ -798,11 +897,13 @@ async function init() {
 
   $("todayBtn").addEventListener("click", async () => {
     $("dateInput").value = "今天";
+    saveGuestDraft();
     await refreshPreview();
   });
 
   $("tomorrowBtn").addEventListener("click", async () => {
     $("dateInput").value = "明天";
+    saveGuestDraft();
     await refreshPreview();
   });
 
@@ -811,6 +912,7 @@ async function init() {
       const d = await api("/api/format", "POST", { content: $("contentInput").value });
       $("contentInput").value = d.content;
       updateStats();
+      saveGuestDraft();
       await refreshPreview();
     } catch (e) {
       showStatusError(e.message || "自动格式化失败");
@@ -832,6 +934,7 @@ async function init() {
       const d = await api("/api/batch-adjust", "POST", { content: $("contentInput").value, amount });
       $("contentInput").value = d.content;
       updateStats();
+      saveGuestDraft();
       await refreshPreview();
     } catch (e) {
       showStatusError(e.message || "批量调价失败");
@@ -843,6 +946,7 @@ async function init() {
     applyTemplateByName(selectedName);
     applyHolidayPresetIfNeeded(selectedName);
     updateStats();
+    saveGuestDraft();
     await refreshPreview();
   });
 
@@ -859,6 +963,7 @@ async function init() {
       $("templateSelect").add(new Option(trimmed, trimmed));
     }
     $("templateSelect").value = trimmed;
+    saveGuestDraft();
   });
 
   $("deleteTemplateBtn").addEventListener("click", () => {
@@ -874,6 +979,7 @@ async function init() {
       applyTemplateByName($("templateSelect").value);
       updateStats();
     }
+    saveGuestDraft();
   });
 
   $("saveConfigBtn").addEventListener("click", async () => {
@@ -881,6 +987,7 @@ async function init() {
     setButtonBusy(btn, true, "保存中...");
     try {
       state.config = buildConfigPayloadForSave();
+      saveGuestDraft();
       const d = await api("/api/config", "POST", state.config);
       state.config = d.config;
       $("statusText").textContent = withGuestHint("设置已保存");

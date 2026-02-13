@@ -6,6 +6,7 @@ import os
 import random
 import re
 import string
+import threading
 import uuid
 
 from flask import Flask, jsonify, render_template, request, send_file, session
@@ -32,6 +33,7 @@ if not os.path.isabs(DATA_DIR):
 DATA_DIR = os.path.abspath(DATA_DIR)
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 OUTPUT_DIR = os.path.join(DATA_DIR, "outputs")
+OUTPUT_META_PATH = os.path.join(DATA_DIR, "output_index.json")
 USER_CONFIG_DIR = os.path.join(DATA_DIR, "user_configs")
 USERS_PATH = os.path.join(DATA_DIR, "users.json")
 CONFIG_PATH = os.path.join(DATA_DIR, "web_config.json")
@@ -41,6 +43,7 @@ ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(USER_CONFIG_DIR, exist_ok=True)
+_OUTPUT_META_LOCK = threading.Lock()
 
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
@@ -136,6 +139,33 @@ def _save_users(users):
         json.dump(users, f, ensure_ascii=False, indent=2)
 
 
+def _load_output_index():
+    if not os.path.isfile(OUTPUT_META_PATH):
+        return {}
+    try:
+        with open(OUTPUT_META_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_output_index(data):
+    with open(OUTPUT_META_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _record_output_owner(relpath, user_id):
+    rel = str(relpath or "").replace("\\", "/").strip()
+    uid = _sanitize_user_id(user_id)
+    if not rel or not uid:
+        return
+    with _OUTPUT_META_LOCK:
+        idx = _load_output_index()
+        idx[rel] = {"user_id": uid, "created_at": datetime.datetime.now().isoformat(timespec="seconds")}
+        _save_output_index(idx)
+
+
 def _load_user_config(user_id):
     user_path = _get_user_config_path(user_id)
     if os.path.isfile(user_path):
@@ -165,6 +195,31 @@ def _safe_join_data_path(relpath):
     return ""
 
 
+def _is_owned_output(relpath, abs_path, user_id):
+    uid = _sanitize_user_id(user_id)
+    if not uid:
+        return False
+
+    outputs_root = os.path.abspath(OUTPUT_DIR)
+    if not (abs_path == outputs_root or abs_path.startswith(outputs_root + os.sep)):
+        return False
+
+    rel = str(relpath or "").replace("\\", "/").strip()
+    with _OUTPUT_META_LOCK:
+        idx = _load_output_index()
+    owner = idx.get(rel, {}).get("user_id")
+    if owner:
+        return owner == uid
+
+    # 兼容旧数据：路径如 outputs/<user_id>/xxx，视为该用户文件。
+    try:
+        outputs_rel = os.path.relpath(abs_path, outputs_root).replace("\\", "/")
+    except Exception:
+        return False
+    parts = [p for p in outputs_rel.split("/") if p]
+    return bool(parts) and parts[0] == uid
+
+
 def _safe_join_base_path(relpath):
     abs_path = os.path.abspath(os.path.join(BASE_DIR, relpath))
     base_root = os.path.abspath(BASE_DIR)
@@ -185,6 +240,16 @@ def _json_body():
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/terms")
+def terms():
+    return render_template("terms.html")
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
 
 
 @app.get("/favicon.ico")
@@ -325,23 +390,31 @@ def api_generate():
     ext = {"PNG": ".png", "JPEG": ".jpg", "PDF": ".pdf"}.get(export_format, ".png")
     uniq = uuid.uuid4().hex[:8]
     filename = f"{safe_title}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{uniq}{ext}"
-    path = os.path.join(OUTPUT_DIR, filename)
+    user_output_dir = os.path.join(OUTPUT_DIR, uid)
+    os.makedirs(user_output_dir, exist_ok=True)
+    path = os.path.join(user_output_dir, filename)
     if export_format == "JPEG":
         img.save(path, "JPEG", quality=int(cfg.get("jpeg_quality", 95)))
     elif export_format == "PDF":
         img.save(path, "PDF", resolution=100.0)
     else:
         img.save(path, "PNG")
+    relpath = _public_path(path)
+    _record_output_owner(relpath, uid)
 
     copy_text = f"【{title}】\n{date_str}\n\n{content.strip()}\n\n{cfg.get('shop_name', '')}\n电话：{cfg.get('phone', '')}"
-    return jsonify({"file": _public_path(path), "name": filename, "copy_text": copy_text})
+    return jsonify({"file": relpath, "name": filename, "copy_text": copy_text})
 
 
 @app.get("/download/<path:relpath>")
 def api_download(relpath):
+    uid = _ensure_user_id()
+    relpath = str(relpath or "").replace("\\", "/")
     abs_path = _safe_join_data_path(relpath)
     if not abs_path:
         return jsonify({"error": "非法路径"}), 403
+    if not _is_owned_output(relpath, abs_path, uid):
+        return jsonify({"error": "无权下载该文件"}), 403
     if not os.path.isfile(abs_path):
         return jsonify({"error": "文件不存在"}), 404
     return send_file(abs_path, as_attachment=True)

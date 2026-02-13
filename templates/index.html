@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=20260212n" />
+  <link rel="stylesheet" href="/static/style.css?v=20260213a" />
 </head>
 <body>
   <div class="bg-orb orb-a"></div>
@@ -35,6 +35,7 @@
         <div id="settingsMenu" class="settings-menu" role="menu" aria-label="设置菜单" hidden>
           <p id="settingsMenuUser" class="settings-menu-user">当前身份：未登录</p>
           <button id="settingsMenuAuthBtn" class="settings-menu-item" type="button" role="menuitem">登录 / 注册</button>
+          <button id="clearGuestDraftBtn" class="settings-menu-item" type="button" role="menuitem" hidden>清空访客草稿</button>
           <button id="settingsMenuPanelBtn" class="settings-menu-item" type="button" role="menuitem">打开设置</button>
         </div>
       </div>
@@ -90,7 +91,13 @@
 
         <footer class="action-bar">
           <button id="generateBtn" class="primary pill-btn">生成</button>
-          <p id="actionBarNote" class="action-bar-note">© 2026 开发者：李学涛</p>
+          <p id="actionBarNote" class="action-bar-note">
+            <span>© 2026 开发者：李学涛</span>
+            <span class="action-bar-sep">|</span>
+            <a class="action-bar-link" href="/terms" target="_blank" rel="noopener noreferrer">用户协议</a>
+            <span class="action-bar-sep">|</span>
+            <a class="action-bar-link" href="/privacy" target="_blank" rel="noopener noreferrer">隐私政策</a>
+          </p>
         </footer>
       </section>
     </div>
@@ -135,13 +142,12 @@
                 <span id="themeColorHex" class="theme-color-hex">#B22222</span>
               </div>
               <div id="themePalette" class="theme-palette" aria-label="推荐主题色">
-                <button type="button" class="theme-swatch" data-color="#B22222" title="#B22222" aria-label="推荐色 #B22222"></button>
-                <button type="button" class="theme-swatch" data-color="#0B8F7A" title="#0B8F7A" aria-label="推荐色 #0B8F7A"></button>
+                <button type="button" class="theme-swatch" data-color="#D32F2F" title="#D32F2F" aria-label="推荐色 #D32F2F"></button>
                 <button type="button" class="theme-swatch" data-color="#2563EB" title="#2563EB" aria-label="推荐色 #2563EB"></button>
+                <button type="button" class="theme-swatch" data-color="#16A34A" title="#16A34A" aria-label="推荐色 #16A34A"></button>
                 <button type="button" class="theme-swatch" data-color="#EA580C" title="#EA580C" aria-label="推荐色 #EA580C"></button>
-                <button type="button" class="theme-swatch" data-color="#BE123C" title="#BE123C" aria-label="推荐色 #BE123C"></button>
-                <button type="button" class="theme-swatch" data-color="#CA8A04" title="#CA8A04" aria-label="推荐色 #CA8A04"></button>
-                <button type="button" class="theme-swatch" data-color="#1D4ED8" title="#1D4ED8" aria-label="推荐色 #1D4ED8"></button>
+                <button type="button" class="theme-swatch" data-color="#7C3AED" title="#7C3AED" aria-label="推荐色 #7C3AED"></button>
+                <button type="button" class="theme-swatch" data-color="#0891B2" title="#0891B2" aria-label="推荐色 #0891B2"></button>
               </div>
             </label>
             <label>卡片样式
