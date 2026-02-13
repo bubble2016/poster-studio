@@ -592,35 +592,6 @@ def _apply_watermark(img, text, opacity=0.15, density=1.0):
     return Image.alpha_composite(img, layer)
 
 
-def _apply_crawl_perspective(base_img, composed_img, box, top_scale=0.64, lift=0.1):
-    x0, y0, x1, y1 = box
-    panel = composed_img.crop((x0, y0, x1, y1)).convert("RGBA")
-    w, h = panel.size
-    out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    y_lift = int(h * lift)
-    max_y = h - 1
-
-    for y in range(h):
-        t = y / max(1, h - 1)
-        scale = top_scale + (1.0 - top_scale) * t
-        line_w = max(2, int(w * scale))
-        x = (w - line_w) // 2
-        ny = min(max_y, int(y * (1 - lift)))
-        line = panel.crop((0, y, w, y + 1)).resize((line_w, 1), Image.Resampling.BICUBIC)
-        out.paste(line, (x, ny))
-
-    glow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(glow)
-    for i in range(24):
-        a = int(70 * (1 - i / 24))
-        gd.line([(w * 0.22 + i, y_lift + 2), (w * 0.78 - i, y_lift + 2)], fill=(255, 220, 90, a), width=1)
-    out = Image.alpha_composite(out, glow.filter(ImageFilter.GaussianBlur(1.1)))
-
-    layer = base_img.copy()
-    layer.paste(out, (x0, y0), out)
-    return layer
-
-
 def _calculate_layout_lines(lines, cw, is_holiday_mode, get_font):
     layout = []
     total_height = 0
@@ -675,8 +646,6 @@ def draw_poster(content, date_str, title, cfg):
     w, h = CANVAS_SIZE
     theme_hex = _normalize_hex_color(cfg.get("theme_color", "#B22222"))
     theme_rgb = _hex_to_rgb(theme_hex)
-    theme_deep = tuple(max(0, int(c * 0.72)) for c in theme_rgb)
-    theme_soft = _mix_with_white(theme_rgb, 0.78)
     theme_unit = _mix_with_white(theme_rgb, 0.62)
     row_bg_fixed = (249, 249, 249)
 
@@ -699,7 +668,6 @@ def draw_poster(content, date_str, title, cfg):
     else:
         base = Image.new("RGB", (w, h), "#E0E0E0")
     img = base.convert("RGBA")
-    bg_snapshot = img.copy()
 
     get_font = lambda size, bold=False: FontManager.get(FONT_CN_BOLD if bold else FONT_CN_REG, size)
     get_med_font = lambda size: FontManager.get(FONT_CN_MED, size)
@@ -721,15 +689,13 @@ def draw_poster(content, date_str, title, cfg):
 
     style = cfg.get("card_style", "single")
     # 兼容旧配置：已下线样式统一回退为单张。
-    if style in {"fold", "sidebar"}:
+    if style in {"fold", "sidebar", "soft", "outline_pro", "outline", "ink", "neon"}:
         style = "single"
-    if style == "soft":
-        style = "outline_pro"
     alpha = int(float(cfg.get("card_opacity", 1.0)) * 255)
     card = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     flip_overlay = None
     dc = ImageDraw.Draw(card)
-    is_crawl_style = (style == "outline_pro") # Fix: Initialize is_crawl_style here
+    is_dark_style = False
     if style == "ticket":
         dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=20, fill=(255, 255, 255, alpha))
         dc.ellipse((cx - 10, cy + ch // 2 - 10, cx + 10, cy + ch // 2 + 10), fill=(0, 0, 0, 0))
@@ -777,89 +743,81 @@ def draw_poster(content, date_str, title, cfg):
                 width=2,
             )
         flip_overlay = fold.filter(ImageFilter.GaussianBlur(0.6))
-    elif style == "outline_pro":
+    elif style == "aurora":
         shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         sd = ImageDraw.Draw(shadow)
-        sd.rounded_rectangle([(cx + 22, cy + 34), (cx + cw + 22, cy + ch + 34)], radius=34, fill=(0, 0, 0, 88))
-        img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(20)))
+        sd.rounded_rectangle([(cx + 16, cy + 24), (cx + cw + 16, cy + ch + 24)], radius=44, fill=(14, 20, 34, 90))
+        img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(18)))
 
-        dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=30, fill=(255, 255, 255, alpha))
+        dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=42, fill=(255, 255, 255, min(255, alpha + 8)))
 
-        crawl_frame = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        cd = ImageDraw.Draw(crawl_frame)
-        # 金黄描边与辉光，更接近星战片头字幕的视觉语言。
-        for i in range(10):
-            a = int(185 - i * 14)
-            cd.rounded_rectangle(
-                [(cx + 4 + i, cy + 4 + i), (cx + cw - 4 - i, cy + ch - 4 - i)],
-                radius=max(12, 28 - i),
-                outline=(252, 220, 84, a),
-                width=1,
-            )
-        for i in range(20):
-            a = int(70 * (1 - i / 20))
-            cd.line([(cx + 40, cy + 18 + i), (cx + cw - 40, cy + 18 + i)], fill=(255, 236, 146, a), width=1)
-        flip_overlay = crawl_frame.filter(ImageFilter.GaussianBlur(1.0))
-    elif style == "outline":
-        border_c = theme_hex
-
-        # 大面积软阴影：拉开和其它样式的空间层次。
-        deep_shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        dsd = ImageDraw.Draw(deep_shadow)
-        dsd.rounded_rectangle([(cx + 30, cy + 44), (cx + cw + 30, cy + ch + 44)], radius=50, fill=(8, 12, 20, 86))
-        dsd.rounded_rectangle([(cx + 16, cy + 24), (cx + cw + 16, cy + ch + 24)], radius=44, fill=(8, 12, 20, 62))
-        img = Image.alpha_composite(img, deep_shadow.filter(ImageFilter.GaussianBlur(22)))
-
-        # 卡片主体。
-        dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=38, fill=(255, 255, 255, alpha))
-
-        # 外框厚边：用多层描边模拟厚度与倒角。
-        outer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        od = ImageDraw.Draw(outer)
+        glass = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(glass)
         for i in range(18):
             t = i / 17
-            a = int(170 - 120 * t)
-            od.rounded_rectangle(
+            gd.rounded_rectangle(
                 [(cx + i, cy + i), (cx + cw - i, cy + ch - i)],
-                radius=max(18, 38 - i),
-                outline=(30, 34, 42, a),
+                radius=max(16, 42 - i),
+                outline=(
+                    int(theme_rgb[0] + (255 - theme_rgb[0]) * t),
+                    int(theme_rgb[1] + (255 - theme_rgb[1]) * t),
+                    int(theme_rgb[2] + (255 - theme_rgb[2]) * t),
+                    130 - int(90 * t),
+                ),
                 width=1,
             )
-        for i in range(8):
-            t = i / 7
-            r = int(255 - (255 - int(border_c[1:3], 16)) * (0.4 + 0.5 * t))
-            g = int(255 - (255 - int(border_c[3:5], 16)) * (0.4 + 0.5 * t))
-            b = int(255 - (255 - int(border_c[5:7], 16)) * (0.4 + 0.5 * t))
-            od.rounded_rectangle(
+        for i in range(16):
+            a = int(95 * (1 - i / 16))
+            gd.line([(cx + 42, cy + 18 + i), (cx + cw - 42, cy + 18 + i)], fill=(255, 255, 255, a), width=1)
+        for i in range(36):
+            a = int(55 * (1 - i / 36))
+            gd.ellipse(
+                (cx + int(cw * 0.67) - i * 6, cy - 120 - i * 4, cx + int(cw * 0.67) + i * 6, cy + 80 + i * 2),
+                outline=(theme_rgb[0], theme_rgb[1], theme_rgb[2], a),
+                width=2,
+            )
+        flip_overlay = glass.filter(ImageFilter.GaussianBlur(0.9))
+    elif style == "paper_relief":
+        shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        sd = ImageDraw.Draw(shadow)
+        sd.rounded_rectangle([(cx + 14, cy + 22), (cx + cw + 14, cy + ch + 22)], radius=38, fill=(52, 70, 92, 68))
+        img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(18)))
+
+        dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=38, fill=(255, 255, 255, min(255, alpha + 10)))
+
+        frame = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        fd = ImageDraw.Draw(frame)
+        for i in range(10):
+            t = i / 9
+            fd.rounded_rectangle(
                 [(cx + 6 + i, cy + 6 + i), (cx + cw - 6 - i, cy + ch - 6 - i)],
-                radius=max(16, 32 - i),
-                outline=(r, g, b, 160 - i * 14),
+                radius=max(14, 34 - i),
+                outline=(
+                    int(255 - (255 - theme_rgb[0]) * (0.25 + 0.6 * t)),
+                    int(255 - (255 - theme_rgb[1]) * (0.25 + 0.6 * t)),
+                    int(255 - (255 - theme_rgb[2]) * (0.25 + 0.6 * t)),
+                    155 - i * 12,
+                ),
                 width=2 if i < 3 else 1,
             )
-        flip_overlay = outer.filter(ImageFilter.GaussianBlur(0.7))
-
-        # 内切高光与底边反射，让“棱边立体”更明显。
-        inner = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        ind = ImageDraw.Draw(inner)
-        for i in range(22):
-            a = int(72 * (1 - i / 22))
-            ind.rounded_rectangle(
-                [(cx + 14 + i, cy + 14 + i), (cx + cw - 14 - i, cy + int(ch * 0.34) - i)],
-                radius=max(10, 26 - i // 2),
+        for i in range(14):
+            a = int(70 * (1 - i / 14))
+            fd.rounded_rectangle(
+                [(cx + 22 + i, cy + 20 + i), (cx + cw - 22 - i, int(cy + ch * 0.35) - i)],
+                radius=max(8, 24 - i),
                 outline=(255, 255, 255, a),
                 width=1,
             )
-        for i in range(26):
-            a = int(58 * (1 - i / 26))
-            ind.line([(cx + 48, cy + ch - 24 + i), (cx + cw - 48, cy + ch - 24 + i)], fill=(50, 62, 82, a), width=1)
-        img = Image.alpha_composite(img, inner.filter(ImageFilter.GaussianBlur(1.1)))
+        for i in range(18):
+            a = int(52 * (1 - i / 18))
+            fd.line([(cx + 48, cy + ch - 18 + i), (cx + cw - 48, cy + ch - 18 + i)], fill=(68, 84, 106, a), width=1)
+        flip_overlay = frame.filter(ImageFilter.GaussianBlur(0.7))
     else:
         dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=15, fill=(255, 255, 255, alpha))
     img = Image.alpha_composite(img, card)
     if flip_overlay is not None:
         img = Image.alpha_composite(img, flip_overlay)
     draw = ImageDraw.Draw(img)
-    # is_crawl_style = (style == "outline_pro") # Moved initialization earlier
 
     logo = _load_image(cfg.get("logo_image_path"))
     if logo:
@@ -874,11 +832,11 @@ def draw_poster(content, date_str, title, cfg):
         img.paste(logo, (lx, int(ly - logo_half)), mask)
 
     cur = cy + 190
-    draw.text((w // 2, cur), title or "调价通知", font=get_font(75, True), fill=("#F8D84A" if is_crawl_style else "black"), anchor="mt")
+    draw.text((w // 2, cur), title or "调价通知", font=get_font(75, True), fill=("#F5F7FB" if is_dark_style else "black"), anchor="mt")
     cur += 100
-    draw.text((w // 2, cur), normalize_date_for_render(date_str), font=get_font(35), fill=("#C9AB43" if is_crawl_style else "gray"), anchor="mt")
+    draw.text((w // 2, cur), normalize_date_for_render(date_str), font=get_font(35), fill=("#B3BDC9" if is_dark_style else "gray"), anchor="mt")
     cur += 60
-    draw.line([(cx + 50, cur), (cx + cw - 50, cur)], fill=("#B08C2E" if is_crawl_style else "#F0F0F0"), width=3)
+    draw.line([(cx + 50, cur), (cx + cw - 50, cur)], fill=(theme_unit if is_dark_style else "#F0F0F0"), width=3)
     cur += 40
 
     row_idx = 0
@@ -894,7 +852,7 @@ def draw_poster(content, date_str, title, cfg):
             if row_idx % 2 == 0:
                 draw.rectangle(
                     [(cx + 20, cur - 10), (cx + cw - 20, cur + 70)],
-                    fill=((22, 22, 26, 235) if is_crawl_style else (*row_bg_fixed, 255)),
+                    fill=((34, 40, 52, 215) if is_dark_style else (*row_bg_fixed, 255)),
                 )
              
             k, v = line.replace("：", ":").split(":", 1)
@@ -902,29 +860,29 @@ def draw_poster(content, date_str, title, cfg):
                 (cx + 60, cur + 30),
                 k.replace("【", "").replace("】", "").strip(),
                 font=get_label_font(45),
-                fill=("#F2D063" if is_crawl_style else (48, 52, 58)),
+                fill=("#DCE4EE" if is_dark_style else (48, 52, 58)),
                 anchor="lm",
             )
              
-            if is_crawl_style:
-                c_val = "#F8D84A"
-            else:
-                price_mode = str(cfg.get("price_color_mode", "semantic") or "semantic").lower()
-                if price_mode == "semantic":
-                    if any(x in v for x in ["上调", "涨"]):
-                        c_val = "#D32F2F"
-                    elif any(x in v for x in ["下调", "跌", "降"]):
-                        c_val = "#2E7D32"
-                    else:
-                        c_val = theme_hex
+            price_mode = str(cfg.get("price_color_mode", "semantic") or "semantic").lower()
+            if price_mode == "semantic":
+                if any(x in v for x in ["上调", "涨"]):
+                    c_val = "#D32F2F"
+                elif any(x in v for x in ["下调", "跌", "降"]):
+                    c_val = "#2E7D32"
                 else:
                     c_val = theme_hex
+            else:
+                c_val = theme_hex
              
             base_y, rx = cur + 53, cx + cw - 60
             if "元" in v:
                 val_pt, unit_pt = v.split("元", 1)
                 fu = get_font(30)
-                unit_color = "#D8BE68" if is_crawl_style else (c_val if c_val in {"#D32F2F", "#2E7D32"} else theme_unit)
+                if is_dark_style:
+                    unit_color = "#AAB6C5" if c_val not in {"#D32F2F", "#2E7D32"} else c_val
+                else:
+                    unit_color = c_val if c_val in {"#D32F2F", "#2E7D32"} else theme_unit
                 draw.text((rx, base_y), "元" + unit_pt.strip(), font=fu, fill=unit_color, anchor="rs")
                 uw = draw.textlength("元" + unit_pt.strip(), font=fu)
                 fv = get_num_font(65)
@@ -938,7 +896,7 @@ def draw_poster(content, date_str, title, cfg):
             
         elif item["type"] == "text":
             is_note = item["is_note"]
-            c = "#FFB347" if is_note else ("#C5AA4C" if is_crawl_style else "#666")
+            c = "#FFB347" if is_note else ("#AAB6C5" if is_dark_style else "#666")
             f = get_font(42, True) if is_note else get_font(38)
             lh = item["lh"]
             
@@ -948,7 +906,7 @@ def draw_poster(content, date_str, title, cfg):
 
     fy = footer_start_y
     for x in range(cx + 40, cx + cw - 40, 20):
-        draw.line([(x, fy), (x + 10, fy)], fill=("#A9872D" if is_crawl_style else "#DDDDDD"), width=2)
+        draw.line([(x, fy), (x + 10, fy)], fill=("#7F8EA3" if is_dark_style else "#DDDDDD"), width=2)
 
     qr = _load_image(cfg.get("qrcode_image_path"))
     if qr:
@@ -958,22 +916,22 @@ def draw_poster(content, date_str, title, cfg):
         ImageDraw.Draw(mask).rounded_rectangle([(0, 0), qr.size], radius=15, fill=255)
         img.paste(qr, (qx, qy), mask)
         rx = cx + cw - 60
-        draw.text((rx, qy + 10), cfg.get("shop_name", ""), font=get_font(42, True), fill=("#E2C260" if is_crawl_style else "#444"), anchor="rt")
+        draw.text((rx, qy + 10), cfg.get("shop_name", ""), font=get_font(42, True), fill=("#F4F7FD" if is_dark_style else "#444"), anchor="rt")
         if cfg.get("phone"):
-            draw.text((rx, qy + 95), f"电话：{cfg['phone']}", font=get_font(36), fill=("#B9993F" if is_crawl_style else "#888"), anchor="rt")
+            draw.text((rx, qy + 95), f"电话：{cfg['phone']}", font=get_font(36), fill=("#AAB6C5" if is_dark_style else "#888"), anchor="rt")
         if cfg.get("address"):
-            draw.text((rx, qy + 180), f"地址：{cfg['address']}", font=get_font(26), fill=("#B9993F" if is_crawl_style else "#888"), anchor="rt")
-        draw.text((w // 2, fy + 400), cfg.get("slogan", ""), font=get_font(35, True), fill=("#F0CC66" if is_crawl_style else "#5CAF5F"), anchor="mm")
+            draw.text((rx, qy + 180), f"地址：{cfg['address']}", font=get_font(26), fill=("#AAB6C5" if is_dark_style else "#888"), anchor="rt")
+        draw.text((w // 2, fy + 400), cfg.get("slogan", ""), font=get_font(35, True), fill=(theme_unit if is_dark_style else "#5CAF5F"), anchor="mm")
     else:
         cy2 = fy + 60
-        draw.text((w // 2, cy2), cfg.get("shop_name", ""), font=get_font(40, True), fill=("#E2C260" if is_crawl_style else "#444"), anchor="mm")
+        draw.text((w // 2, cy2), cfg.get("shop_name", ""), font=get_font(40, True), fill=("#F4F7FD" if is_dark_style else "#444"), anchor="mm")
         cy2 += 80
         if cfg.get("phone"):
-            draw.text((w // 2, cy2), f"电话：{cfg['phone']}", font=get_font(36), fill=("#B9993F" if is_crawl_style else "#999"), anchor="mm")
+            draw.text((w // 2, cy2), f"电话：{cfg['phone']}", font=get_font(36), fill=("#AAB6C5" if is_dark_style else "#999"), anchor="mm")
         cy2 += 70
         if cfg.get("address"):
-            draw.text((w // 2, cy2), f"地址：{cfg['address']}", font=get_font(28), fill=("#B9993F" if is_crawl_style else "#999"), anchor="mm")
-        draw.text((w // 2, cy2 + 100), cfg.get("slogan", ""), font=get_font(35, True), fill=("#F0CC66" if is_crawl_style else "#5CAF5F"), anchor="mm")
+            draw.text((w // 2, cy2), f"地址：{cfg['address']}", font=get_font(28), fill=("#AAB6C5" if is_dark_style else "#999"), anchor="mm")
+        draw.text((w // 2, cy2 + 100), cfg.get("slogan", ""), font=get_font(35, True), fill=(theme_unit if is_dark_style else "#5CAF5F"), anchor="mm")
 
     st = _load_image(cfg.get("stamp_image_path"))
     if st:
@@ -984,9 +942,6 @@ def draw_poster(content, date_str, title, cfg):
         layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         layer.paste(st, (sx, sy))
         img = Image.alpha_composite(img, layer)
-
-    if style == "outline_pro":
-        img = _apply_crawl_perspective(bg_snapshot, img, (cx, cy, cx + cw, cy + ch), top_scale=0.64, lift=0.1)
 
     if cfg.get("watermark_enabled") and cfg.get("watermark_text"):
         img = _apply_watermark(

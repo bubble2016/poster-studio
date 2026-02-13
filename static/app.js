@@ -18,12 +18,21 @@ const UPLOAD_PREVIEW_FIELDS = [
   { key: "stamp_image_path", thumbId: "stampThumb", wrapId: "stampThumbWrap" },
   { key: "qrcode_image_path", thumbId: "qrThumb", wrapId: "qrThumbWrap" },
 ];
-const AVAILABLE_CARD_STYLES = new Set(["single", "stack", "block", "flip", "ticket", "double", "outline_pro", "outline"]);
+const AVAILABLE_CARD_STYLES = new Set(["single", "stack", "block", "flip", "ticket", "double", "aurora", "paper_relief"]);
 const BG_VARIANTS = ["bg-variant-a", "bg-variant-b", "bg-variant-c", "bg-variant-d", "bg-variant-e"];
 const MAX_UPLOAD_MB = 15;
 const GUEST_DRAFT_STORAGE_KEY = "poster_guest_draft_v1";
 const GUEST_DRAFT_SCHEMA_VERSION = 1;
 const GUEST_DRAFT_EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
+const SETTINGS_TIP_SEEN_KEY = "poster_settings_tip_seen_v1";
+const RANGE_VALUE_FIELDS = [
+  { inputId: "bgBlur", valueId: "bgBlurValue", format: (v) => `${Math.round(Number(v) || 0)}` },
+  { inputId: "bgBrightness", valueId: "bgBrightnessValue", format: (v) => `${(Number(v) || 0).toFixed(2)}x` },
+  { inputId: "cardOpacity", valueId: "cardOpacityValue", format: (v) => `${Math.round((Number(v) || 0) * 100)}%` },
+  { inputId: "stampOpacity", valueId: "stampOpacityValue", format: (v) => `${Math.round((Number(v) || 0) * 100)}%` },
+  { inputId: "watermarkOpacity", valueId: "watermarkOpacityValue", format: (v) => `${Math.round((Number(v) || 0) * 100)}%` },
+  { inputId: "watermarkDensity", valueId: "watermarkDensityValue", format: (v) => `${(Number(v) || 0).toFixed(1)}x` },
+];
 
 function getStats(text) {
   const chars = (text || "").replace(/\s/g, "").length;
@@ -33,6 +42,19 @@ function getStats(text) {
 
 function updateStats() {
   $("statsText").textContent = getStats($("contentInput").value);
+}
+
+function syncRangeValue(inputId) {
+  const field = RANGE_VALUE_FIELDS.find((x) => x.inputId === inputId);
+  if (!field) return;
+  const inputEl = $(field.inputId);
+  const valueEl = $(field.valueId);
+  if (!inputEl || !valueEl) return;
+  valueEl.textContent = field.format(inputEl.value);
+}
+
+function syncAllRangeValues() {
+  RANGE_VALUE_FIELDS.forEach((field) => syncRangeValue(field.inputId));
 }
 
 async function api(url, method = "GET", body = null) {
@@ -136,9 +158,195 @@ function withGuestHint(baseText) {
 function syncFooterNoteVisibility() {
   const note = $("actionBarNote");
   if (!note) return;
+  if (document.body.classList.contains("preview-focus")) {
+    note.classList.remove("is-visible");
+    return;
+  }
   const doc = document.documentElement;
   const remain = Math.max(0, doc.scrollHeight - (window.scrollY + window.innerHeight));
   note.classList.toggle("is-visible", remain <= 24);
+}
+
+function isMobileLayout() {
+  return window.matchMedia("(max-width: 819px)").matches;
+}
+
+function getPreviewCard() {
+  return document.querySelector(".preview-card");
+}
+
+function isDesktopFullscreenWithCard() {
+  const card = getPreviewCard();
+  if (!card) return false;
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  return fsEl === card;
+}
+
+function isDesktopPreviewFocusActive() {
+  return isDesktopFullscreenWithCard() || document.body.classList.contains("is-desktop-preview-focus");
+}
+
+async function enterDesktopPreviewFocus() {
+  const card = getPreviewCard();
+  if (!card) return;
+  try {
+    if (card.requestFullscreen) {
+      await card.requestFullscreen();
+      return;
+    }
+    if (card.webkitRequestFullscreen) {
+      card.webkitRequestFullscreen();
+      return;
+    }
+  } catch (_) {}
+  document.body.classList.add("is-desktop-preview-focus");
+}
+
+async function exitDesktopPreviewFocus() {
+  document.body.classList.remove("is-desktop-preview-focus");
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  if (fsEl) {
+    try {
+      if (document.exitFullscreen) {
+        await document.exitFullscreen();
+        return;
+      }
+      if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      }
+    } catch (_) {}
+  }
+}
+
+function syncTopbarCompactOnScroll() {
+  const body = document.body;
+  if (!body) return;
+  if (!isMobileLayout() || body.classList.contains("preview-focus")) {
+    body.classList.remove("is-topbar-collapsed");
+    return;
+  }
+  const y = window.scrollY || document.documentElement.scrollTop || 0;
+  const collapsed = body.classList.contains("is-topbar-collapsed");
+  if (!collapsed && y > 30) {
+    body.classList.add("is-topbar-collapsed");
+  } else if (collapsed && y < 8) {
+    body.classList.remove("is-topbar-collapsed");
+  }
+}
+
+function syncPreviewFocusUi() {
+  const body = document.body;
+  const focusBtn = $("togglePreviewFocusBtn");
+  const drawerToggleBtn = $("editorDrawerToggleBtn");
+  if (!body || !focusBtn || !drawerToggleBtn) return;
+
+  const inFocus = isMobileLayout()
+    ? body.classList.contains("preview-focus")
+    : isDesktopPreviewFocusActive();
+  const drawerOpen = body.classList.contains("editor-drawer-open");
+
+  focusBtn.textContent = inFocus ? "退出全屏" : "全屏预览";
+  focusBtn.setAttribute("aria-pressed", inFocus ? "true" : "false");
+
+  drawerToggleBtn.hidden = !isMobileLayout() || !inFocus;
+  drawerToggleBtn.textContent = drawerOpen ? "收起编辑区" : "展开编辑区";
+  drawerToggleBtn.setAttribute("aria-expanded", drawerOpen ? "true" : "false");
+}
+
+async function togglePreviewFocus(force) {
+  const body = document.body;
+  if (!body) return;
+
+  const shouldEnter = typeof force === "boolean"
+    ? force
+    : !(
+      isMobileLayout()
+        ? body.classList.contains("preview-focus")
+        : isDesktopPreviewFocusActive()
+    );
+
+  if (isMobileLayout()) {
+    if (shouldEnter) {
+      body.classList.add("preview-focus");
+      body.classList.remove("editor-drawer-open");
+    } else {
+      body.classList.remove("preview-focus");
+      body.classList.remove("editor-drawer-open");
+    }
+  } else if (shouldEnter) {
+    await enterDesktopPreviewFocus();
+  } else {
+    await exitDesktopPreviewFocus();
+  }
+
+  syncPreviewFocusUi();
+  syncTopbarCompactOnScroll();
+  syncFooterNoteVisibility();
+}
+
+function hasSeenSettingsTip() {
+  try {
+    return localStorage.getItem(SETTINGS_TIP_SEEN_KEY) === "1";
+  } catch (_) {
+    return true;
+  }
+}
+
+function markSettingsTipSeen() {
+  try {
+    localStorage.setItem(SETTINGS_TIP_SEEN_KEY, "1");
+  } catch (_) {}
+}
+
+function showSettingsFirstUseTip() {
+  if (hasSeenSettingsTip()) return;
+  const btn = $("openSettingsBtn");
+  if (!btn) return;
+
+  const old = $("settingsFirstTip");
+  if (old) old.remove();
+
+  const tip = document.createElement("aside");
+  tip.id = "settingsFirstTip";
+  tip.className = "settings-tip";
+  tip.setAttribute("role", "status");
+  tip.innerHTML = `
+    <p>首次使用提示：包站名称、手机号、地址等信息，都在右上角“设置”里。</p>
+    <button type="button" class="settings-tip-btn">知道了</button>
+  `;
+  document.body.appendChild(tip);
+
+  let closed = false;
+  let autoCloseTimer = 0;
+
+  const closeTip = () => {
+    if (closed) return;
+    closed = true;
+    if (autoCloseTimer) {
+      clearTimeout(autoCloseTimer);
+      autoCloseTimer = 0;
+    }
+    document.removeEventListener("click", onDocClick, true);
+    tip.remove();
+    markSettingsTipSeen();
+  };
+
+  const onDocClick = (e) => {
+    if (tip.contains(e.target) || btn.contains(e.target)) return;
+    closeTip();
+  };
+
+  tip.querySelector(".settings-tip-btn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    closeTip();
+  });
+
+  btn.addEventListener("click", closeTip, { once: true });
+  setTimeout(() => {
+    document.addEventListener("click", onDocClick, true);
+  }, 0);
+
+  autoCloseTimer = window.setTimeout(closeTip, 12000);
 }
 
 function buildConfigPayloadForSave() {
@@ -315,7 +523,8 @@ function bindFromConfig(cfg) {
 
   $("themeColor").value = cfg.theme_color || "#B22222";
   syncThemeColorUi($("themeColor").value);
-  const savedCardStyle = cfg.card_style === "soft" ? "outline_pro" : (cfg.card_style || "single");
+  const legacyStyleMap = { soft: "single", outline_pro: "single", outline: "single", fold: "single", sidebar: "single", ink: "single", neon: "single" };
+  const savedCardStyle = legacyStyleMap[cfg.card_style] || cfg.card_style || "single";
   $("cardStyle").value = AVAILABLE_CARD_STYLES.has(savedCardStyle) ? savedCardStyle : "single";
   $("priceColorMode").value = cfg.price_color_mode || "semantic";
   $("shopName").value = cfg.shop_name || "";
@@ -333,6 +542,7 @@ function bindFromConfig(cfg) {
   $("copyMode").value = cfg.copy_mode || "复制图片";
   $("exportFormat").value = cfg.export_format || "PNG";
   syncUploadThumbsFromConfig(cfg);
+  syncAllRangeValues();
 
   updateStats();
 }
@@ -678,6 +888,7 @@ function applyRandomBackgroundVariant() {
 async function init() {
   applyRandomBackgroundVariant();
   syncSettingsMenuUi();
+  syncPreviewFocusUi();
   await ensureLogin();
   bindLogoCropDrag();
   setPreviewLoading("正在生成预览...");
@@ -741,6 +952,12 @@ async function init() {
   watchIds.forEach((id) => {
     $(id).addEventListener("input", onType);
     $(id).addEventListener("change", onType);
+  });
+  RANGE_VALUE_FIELDS.forEach((field) => {
+    const el = $(field.inputId);
+    if (!el) return;
+    el.addEventListener("input", () => syncRangeValue(field.inputId));
+    el.addEventListener("change", () => syncRangeValue(field.inputId));
   });
   $("themeColor").addEventListener("input", () => syncThemeColorUi($("themeColor").value));
   $("themeColor").addEventListener("change", () => syncThemeColorUi($("themeColor").value));
@@ -858,10 +1075,49 @@ async function init() {
 
   window.addEventListener("resize", debounce(syncSettingsPaneHeight, 120));
   window.addEventListener("resize", syncFooterNoteVisibility);
+  window.addEventListener("resize", async () => {
+    if (!isMobileLayout() && document.body.classList.contains("preview-focus")) {
+      await togglePreviewFocus(false);
+    }
+    syncTopbarCompactOnScroll();
+    syncPreviewFocusUi();
+  });
   window.addEventListener("scroll", syncFooterNoteVisibility, { passive: true });
+  window.addEventListener("scroll", syncTopbarCompactOnScroll, { passive: true });
+  document.addEventListener("fullscreenchange", syncPreviewFocusUi);
+  document.addEventListener("webkitfullscreenchange", syncPreviewFocusUi);
+
+  $("togglePreviewFocusBtn").addEventListener("click", async () => {
+    await togglePreviewFocus();
+  });
+  $("previewStage").addEventListener("dblclick", async (e) => {
+    if (isMobileLayout()) return;
+    e.preventDefault();
+    await togglePreviewFocus();
+  });
+  $("editorDrawerToggleBtn").addEventListener("click", () => {
+    const body = document.body;
+    if (!body.classList.contains("preview-focus")) return;
+    body.classList.toggle("editor-drawer-open");
+    syncPreviewFocusUi();
+  });
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (document.body.classList.contains("is-desktop-preview-focus")) {
+      togglePreviewFocus(false);
+      return;
+    }
+    if (document.body.classList.contains("preview-focus")) {
+      const body = document.body;
+      if (body.classList.contains("editor-drawer-open")) {
+        body.classList.remove("editor-drawer-open");
+        syncPreviewFocusUi();
+        return;
+      }
+      togglePreviewFocus(false);
+      return;
+    }
     const menu = $("settingsMenu");
     if (menu && !menu.hidden) {
       closeSettingsMenu();
@@ -1077,6 +1333,8 @@ async function init() {
   await refreshPreview();
   syncSettingsPaneHeight();
   syncFooterNoteVisibility();
+  syncTopbarCompactOnScroll();
+  showSettingsFirstUseTip();
 }
 
 init().catch((e) => {
