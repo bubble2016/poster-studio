@@ -1382,8 +1382,30 @@ async function refreshPreview() {
     if (seq !== state.previewSeq) return;
     const previewSrc = data.image_url || data.image;
     if (!previewSrc) throw new Error("预览地址无效");
-    $("previewImage").src = previewSrc;
-    $("statusText").textContent = !data.valid && data.warnings.length ? data.warnings[0] : "预览已更新";
+    const loadPreviewWithRetry = (retriesLeft = 1) => {
+      const preload = new Image();
+      preload.onload = () => {
+        if (seq !== state.previewSeq) return;
+        $("previewImage").src = preload.src;
+        setPreviewLoaded();
+        $("statusText").textContent = !data.valid && data.warnings.length ? data.warnings[0] : "预览已更新";
+      };
+      preload.onerror = () => {
+        if (seq !== state.previewSeq) return;
+        if (retriesLeft > 0) {
+          const nextSrc = /^data:/i.test(previewSrc)
+            ? previewSrc
+            : `${previewSrc}${previewSrc.includes("?") ? "&" : "?"}_retry=${Date.now()}`;
+          preload.src = nextSrc;
+          retriesLeft -= 1;
+          return;
+        }
+        setPreviewLoading("预览加载失败，请重试");
+        showStatusError("预览加载失败，请重试");
+      };
+      preload.src = previewSrc;
+    };
+    loadPreviewWithRetry(1);
   } catch (e) {
     if (seq !== state.previewSeq) return;
     setPreviewLoading("预览生成失败");
@@ -1414,10 +1436,6 @@ async function init() {
   await ensureLogin();
   bindLogoCropDrag();
   setPreviewLoading("正在生成预览...");
-  $("previewImage").addEventListener("load", setPreviewLoaded);
-  $("previewImage").addEventListener("error", () => {
-    setPreviewLoading("预览加载失败，请重试");
-  });
 
   const data = await api("/api/init");
   const remoteConfig = data.config || {};

@@ -726,9 +726,45 @@ def draw_poster(content, date_str, title, cfg):
     dc = ImageDraw.Draw(card)
     is_dark_style = False
     if style == "ticket":
-        dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=20, fill=(255, 255, 255, alpha))
-        dc.ellipse((cx - 10, cy + ch // 2 - 10, cx + 10, cy + ch // 2 + 10), fill=(0, 0, 0, 0))
-        dc.ellipse((cx + cw - 10, cy + ch // 2 - 10, cx + cw + 10, cy + ch // 2 + 10), fill=(0, 0, 0, 0))
+        shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        sd = ImageDraw.Draw(shadow)
+        sd.rounded_rectangle([(cx + 10, cy + 14), (cx + cw + 10, cy + ch + 14)], radius=30, fill=(0, 0, 0, 66))
+        img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(14)))
+
+        dc.rounded_rectangle(
+            [(cx, cy), (cx + cw, cy + ch)],
+            radius=28,
+            fill=(255, 252, 246, alpha),
+            outline=(214, 202, 184, min(255, alpha)),
+            width=3,
+        )
+        dc.rounded_rectangle(
+            [(cx + 14, cy + 14), (cx + cw - 14, cy + ch - 14)],
+            radius=22,
+            outline=(242, 232, 216, min(255, alpha)),
+            width=2,
+        )
+
+        # 左右齿孔，强化票据辨识度
+        notch_r = 9
+        notch_step = 38
+        notch_top = cy + 56
+        notch_bottom = cy + ch - 56
+        for y_notch in range(notch_top, notch_bottom, notch_step):
+            dc.ellipse((cx - notch_r, y_notch - notch_r, cx + notch_r, y_notch + notch_r), fill=(0, 0, 0, 0))
+            dc.ellipse((cx + cw - notch_r, y_notch - notch_r, cx + cw + notch_r, y_notch + notch_r), fill=(0, 0, 0, 0))
+
+        tear_y = max(cy + 240, min(cy + ch - 260, footer_start_y - 38))
+        dash_start = cx + 48
+        dash_end = cx + cw - 48
+        dash_w = 16
+        dash_gap = 10
+        x_dash = dash_start
+        while x_dash < dash_end:
+            dc.line([(x_dash, tear_y), (min(x_dash + dash_w, dash_end), tear_y)], fill=(186, 174, 156, 230), width=2)
+            x_dash += dash_w + dash_gap
+        dc.ellipse((cx - 12, tear_y - 12, cx + 12, tear_y + 12), fill=(0, 0, 0, 0))
+        dc.ellipse((cx + cw - 12, tear_y - 12, cx + cw + 12, tear_y + 12), fill=(0, 0, 0, 0))
     elif style == "double":
         back_dx, back_dy = 30, 34
         back_alpha = min(255, int(alpha * 0.9) + 28)
@@ -920,37 +956,75 @@ def draw_poster(content, date_str, title, cfg):
     elif style == "aurora":
         shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         sd = ImageDraw.Draw(shadow)
-        sd.rounded_rectangle([(cx + 16, cy + 24), (cx + cw + 16, cy + ch + 24)], radius=44, fill=(14, 20, 34, 90))
-        img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(18)))
+        sd.rounded_rectangle([(cx + 14, cy + 20), (cx + cw + 14, cy + ch + 20)], radius=44, fill=(10, 16, 28, 62))
+        img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(14)))
 
-        dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=42, fill=(255, 255, 255, min(255, alpha + 8)))
+        # 先对卡片区域做背景模糊，强化玻璃磨砂感
+        frost_mask = Image.new("L", (w, h), 0)
+        ImageDraw.Draw(frost_mask).rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=42, fill=255)
+        blurred_bg = img.filter(ImageFilter.GaussianBlur(24))
+        frost_layer = Image.composite(blurred_bg, Image.new("RGBA", (w, h), (0, 0, 0, 0)), frost_mask)
+        img = Image.alpha_composite(img, frost_layer)
+
+        # 玻璃基底：半透明，避免看起来像实体白卡
+        dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=42, fill=(242, 248, 255, min(200, alpha + 6)))
+
+        # 冷色折射层：制造玻璃内部色散
+        tint = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        td = ImageDraw.Draw(tint)
+        for i in range(34):
+            t = i / 33
+            col = (
+                int(170 + 40 * (1 - t)),
+                int(194 + 34 * (1 - t)),
+                int(225 + 24 * t),
+                int(40 * (1 - t)),
+            )
+            td.rounded_rectangle(
+                [(cx + 8 + i, cy + 8 + i), (cx + cw - 8 - i, cy + ch - 8 - i)],
+                radius=max(16, 36 - i),
+                outline=col,
+                width=1,
+            )
+        img = Image.alpha_composite(img, tint.filter(ImageFilter.GaussianBlur(0.8)))
 
         glass = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         gd = ImageDraw.Draw(glass)
-        for i in range(18):
-            t = i / 17
+        edge_rgb = (184, 196, 210)
+        for i in range(20):
+            t = i / 19
             gd.rounded_rectangle(
                 [(cx + i, cy + i), (cx + cw - i, cy + ch - i)],
                 radius=max(16, 42 - i),
                 outline=(
-                    int(theme_rgb[0] + (255 - theme_rgb[0]) * t),
-                    int(theme_rgb[1] + (255 - theme_rgb[1]) * t),
-                    int(theme_rgb[2] + (255 - theme_rgb[2]) * t),
-                    130 - int(90 * t),
+                    int(edge_rgb[0] + (245 - edge_rgb[0]) * t),
+                    int(edge_rgb[1] + (247 - edge_rgb[1]) * t),
+                    int(edge_rgb[2] + (250 - edge_rgb[2]) * t),
+                    112 - int(84 * t),
                 ),
                 width=1,
             )
-        for i in range(16):
-            a = int(95 * (1 - i / 16))
-            gd.line([(cx + 42, cy + 18 + i), (cx + cw - 42, cy + 18 + i)], fill=(255, 255, 255, a), width=1)
-        for i in range(36):
-            a = int(55 * (1 - i / 36))
-            gd.ellipse(
-                (cx + int(cw * 0.67) - i * 6, cy - 120 - i * 4, cx + int(cw * 0.67) + i * 6, cy + 80 + i * 2),
-                outline=(theme_rgb[0], theme_rgb[1], theme_rgb[2], a),
-                width=2,
+        # 顶部柔和线性高光（单段实现，避免调试叠加造成冗余）
+        for i in range(18):
+            t = i / 17
+            a = int(58 * (1 - t))
+            inset = 26 + int(8 * t)
+            gd.line([(cx + inset, cy + 18 + i), (cx + cw - inset, cy + 18 + i)], fill=(249, 252, 255, a), width=1)
+        # 外缘再叠一层柔光，提升“边缘模糊”观感
+        edge_glow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        eg = ImageDraw.Draw(edge_glow)
+        for i in range(12):
+            a = int(18 * (1 - i / 12))
+            eg.rounded_rectangle(
+                [(cx - 6 - i, cy - 6 - i), (cx + cw + 6 + i, cy + ch + 6 + i)],
+                radius=46 + i,
+                outline=(edge_rgb[0], edge_rgb[1], edge_rgb[2], a),
+                width=1,
             )
-        flip_overlay = glass.filter(ImageFilter.GaussianBlur(0.9))
+        flip_overlay = Image.alpha_composite(
+            glass.filter(ImageFilter.GaussianBlur(1.6)),
+            edge_glow.filter(ImageFilter.GaussianBlur(1.8)),
+        )
     elif style == "paper_relief":
         shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         sd = ImageDraw.Draw(shadow)
@@ -1047,7 +1121,7 @@ def draw_poster(content, date_str, title, cfg):
         if item["type"] == "kv":
             line = item["text"]
             row_idx = item["row_idx"]
-            if row_idx % 2 == 0:
+            if row_idx % 2 == 0 and style != "aurora":
                 draw.rectangle(
                     [(cx + 20, cur - 10), (cx + cw - 20, cur + 70)],
                     fill=((34, 40, 52, 215) if is_dark_style else (*row_bg_fixed, 255)),
