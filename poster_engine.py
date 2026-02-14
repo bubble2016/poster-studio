@@ -1,8 +1,10 @@
 ﻿import datetime
 import json
+import logging
 import os
 import random
 import re
+import tempfile
 import threading
 from copy import deepcopy
 
@@ -11,6 +13,12 @@ from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageFo
 
 CANVAS_SIZE = (1080, 1920)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOGGER = logging.getLogger("poster_engine")
+if not LOGGER.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s"))
+    LOGGER.addHandler(handler)
+LOGGER.setLevel(logging.INFO)
 
 
 def _existing_path(paths):
@@ -586,6 +594,7 @@ def _load_image(path):
         try:
             return Image.open(path).convert("RGBA")
         except Exception:
+            LOGGER.exception("load_image.failed | %s", json.dumps({"path": path}, ensure_ascii=False, default=str))
             return None
     return None
 
@@ -1148,10 +1157,28 @@ def load_config(path):
         out.update(cfg)
         return out
     except Exception:
+        LOGGER.exception("load_config.failed | %s", json.dumps({"path": path}, ensure_ascii=False, default=str))
         return deepcopy(DEFAULT_CONFIG)
 
 
 def save_config(path, cfg):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    _atomic_write_json(path, cfg)
+
+
+def _atomic_write_json(path, data):
+    folder = os.path.dirname(path) or "."
+    os.makedirs(folder, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=".tmp_", suffix=".json", dir=folder)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+        raise
