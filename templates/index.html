@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=20260213h" />
+  <link rel="stylesheet" href="/static/style.css?v=20260214m7" />
 </head>
 <body>
   <div class="bg-orb orb-a"></div>
@@ -326,7 +326,70 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=20260213v300"></script>
+  <div id="priceRowDrawerModal" class="modal hidden" aria-hidden="true">
+    <div id="priceDrawerMask" class="modal-mask"></div>
+    <section class="modal-panel modal-panel-sm price-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="priceDrawerTitle">
+      <header class="modal-head">
+        <h2 id="priceDrawerTitle">编辑纸种</h2>
+        <button id="closePriceDrawerBtn" class="ghost-btn" type="button">关闭</button>
+      </header>
+      <div class="modal-body">
+        <div class="drawer-row drawer-row-2">
+          <label class="drawer-inline-field"><span class="drawer-field-label">纸种</span><input id="priceDrawerName" /></label>
+          <label class="drawer-inline-field"><span class="drawer-field-label">单位</span><input id="priceDrawerUnit" placeholder="元/吨" /></label>
+        </div>
+        <div class="drawer-row drawer-row-2 drawer-type-value-row">
+          <label class="drawer-inline-field"><span class="drawer-field-label">类型</span>
+            <select id="priceDrawerMode">
+              <option value="number">单价</option>
+              <option value="range">区间</option>
+              <option value="text">文字</option>
+            </select>
+          </label>
+          <div class="drawer-value-slot">
+            <div id="priceDrawerValueNumberWrap">
+              <label class="drawer-inline-field"><span class="drawer-field-label">值</span><input id="priceDrawerValue" placeholder="例如：1350" /></label>
+            </div>
+            <div id="priceDrawerValueRangeWrap" class="drawer-row drawer-range-wrap" hidden>
+              <input class="drawer-range-input" id="priceDrawerMin" />
+              <span class="drawer-range-sep" aria-hidden="true">-</span>
+              <input class="drawer-range-input" id="priceDrawerMax" />
+            </div>
+            <div id="priceDrawerValueTextWrap" hidden>
+              <label class="drawer-inline-field"><span class="drawer-field-label">说明</span><input id="priceDrawerText" placeholder="例如：上调50" /></label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <footer class="modal-actions modal-actions-3">
+        <button id="deletePriceDrawerBtn" class="danger" type="button">删除</button>
+        <button id="cancelPriceDrawerBtn" type="button">取消</button>
+        <button id="savePriceDrawerBtn" class="primary" type="button">保存</button>
+      </footer>
+    </section>
+  </div>
+
+  <div id="dialogModal" class="modal hidden" aria-hidden="true">
+    <div id="dialogMask" class="modal-mask"></div>
+    <section class="modal-panel modal-panel-sm dialog-panel" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+      <header class="modal-head">
+        <h2 id="dialogTitle">提示</h2>
+        <button id="closeDialogBtn" class="ghost-btn" type="button">关闭</button>
+      </header>
+      <div class="modal-body">
+        <p id="dialogMessage" class="dialog-message"></p>
+        <label id="dialogInputWrap" hidden>请输入
+          <input id="dialogInput" />
+        </label>
+      </div>
+      <footer class="modal-actions">
+        <button id="dialogCancelBtn" type="button">取消</button>
+        <button id="dialogConfirmBtn" class="primary" type="button">确定</button>
+      </footer>
+    </section>
+  </div>
+
+  <script src="/static/app.js?v=20260214m7"></script>
 </body>
 </html>
 

@@ -10,6 +10,7 @@
   holidayBgApplied: false,
   logoCrop: null,
   priceEditorRows: [],
+  editingPriceRowIndex: -1,
   previewSeq: 0,
   lastDateCheckKey: "",
 };
@@ -30,6 +31,7 @@ const GUEST_DRAFT_EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
 const SETTINGS_TIP_SEEN_KEY = "poster_settings_tip_seen_v1";
 const PRICE_LINE_PATTERN = /^\s*【([^】]+)】\s*[：:]\s*(.+?)\s*$/;
 const PRICE_UNIT_DEFAULT = "元/吨";
+const DIALOG_EMPTY = () => {};
 const RANGE_VALUE_FIELDS = [
   { inputId: "bgBlur", valueId: "bgBlurValue", format: (v) => `${Math.round(Number(v) || 0)}` },
   { inputId: "bgBrightness", valueId: "bgBrightnessValue", format: (v) => `${(Number(v) || 0).toFixed(2)}x` },
@@ -154,6 +156,77 @@ function setButtonBusy(btn, busy, busyText = "处理中...") {
   if (!btn.dataset.originText) btn.dataset.originText = btn.textContent || "";
   btn.disabled = !!busy;
   btn.textContent = busy ? busyText : btn.dataset.originText;
+}
+
+const dialogState = {
+  resolver: DIALOG_EMPTY,
+  mode: "alert",
+};
+
+function hasAnyModalOpen() {
+  return [$("settingsModal"), $("loginModal"), $("logoCropModal"), $("dialogModal"), $("priceRowDrawerModal")].some((el) => el && !el.classList.contains("hidden"));
+}
+
+function openDialog(options = {}) {
+  const modal = $("dialogModal");
+  const title = $("dialogTitle");
+  const message = $("dialogMessage");
+  const inputWrap = $("dialogInputWrap");
+  const input = $("dialogInput");
+  const confirmBtn = $("dialogConfirmBtn");
+  const cancelBtn = $("dialogCancelBtn");
+  if (!modal || !title || !message || !inputWrap || !input || !confirmBtn || !cancelBtn) return Promise.resolve(null);
+
+  const mode = options.mode || "alert";
+  dialogState.mode = mode;
+  title.textContent = options.title || "提示";
+  message.textContent = options.message || "";
+  confirmBtn.textContent = options.confirmText || "确定";
+  cancelBtn.textContent = options.cancelText || "取消";
+  cancelBtn.hidden = mode === "alert";
+  inputWrap.hidden = mode !== "prompt";
+  input.value = options.defaultValue || "";
+  input.placeholder = options.placeholder || "";
+
+  modal.classList.remove("hidden");
+  document.body.classList.add("no-scroll");
+
+  if (mode === "prompt") {
+    setTimeout(() => input.focus(), 0);
+  } else {
+    setTimeout(() => confirmBtn.focus(), 0);
+  }
+
+  return new Promise((resolve) => {
+    dialogState.resolver = resolve;
+  });
+}
+
+function closeDialog(result = null) {
+  const modal = $("dialogModal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  modal.classList.add("hidden");
+  if (!hasAnyModalOpen()) {
+    document.body.classList.remove("no-scroll");
+  }
+  const resolve = dialogState.resolver || DIALOG_EMPTY;
+  dialogState.resolver = DIALOG_EMPTY;
+  resolve(result);
+}
+
+async function appAlert(message, title = "提示") {
+  await openDialog({ mode: "alert", title, message, confirmText: "我知道了" });
+}
+
+async function appConfirm(message, title = "请确认") {
+  const ret = await openDialog({ mode: "confirm", title, message, confirmText: "确认", cancelText: "取消" });
+  return ret === true;
+}
+
+async function appPrompt(message, defaultValue = "", title = "请输入", placeholder = "") {
+  const ret = await openDialog({ mode: "prompt", title, message, defaultValue, placeholder, confirmText: "确定", cancelText: "取消" });
+  if (!ret || ret.action !== "confirm") return null;
+  return ret.value;
 }
 
 function showStatusError(msg) {
@@ -543,7 +616,7 @@ function openSettingsModal() {
 
 function closeSettingsModal() {
   $("settingsModal").classList.add("hidden");
-  if ($("loginModal").classList.contains("hidden")) {
+  if (!hasAnyModalOpen()) {
     document.body.classList.remove("no-scroll");
   }
 }
@@ -567,7 +640,7 @@ function openLoginModal() {
 
 function closeLoginModal() {
   $("loginModal").classList.add("hidden");
-  if ($("settingsModal").classList.contains("hidden")) {
+  if (!hasAnyModalOpen()) {
     document.body.classList.remove("no-scroll");
   }
   setLoginError("");
@@ -791,6 +864,9 @@ function parseContentToPriceEditor(content) {
 }
 
 function getPriceEditorRowsFromDom() {
+  if (isMobileLayout()) {
+    return state.priceEditorRows.map((row) => ({ ...row }));
+  }
   const tbody = $("priceTableBody");
   if (!tbody) return [];
   const rows = [];
@@ -856,10 +932,158 @@ function escapeAttr(value) {
     .replace(/"/g, "&quot;");
 }
 
+function setPriceFieldWidth(el, text, minCh, maxCh) {
+  if (!el) return;
+  const content = String(text || "").trim();
+  const len = Array.from(content).length;
+  const nextCh = Math.max(minCh, Math.min(maxCh, (len || 0) + 2));
+  el.style.setProperty("--field-ch", `${nextCh}ch`);
+}
+
+function syncPriceEditorFieldWidths() {
+  const tbody = $("priceTableBody");
+  if (!tbody) return;
+  if (isMobileLayout()) {
+    tbody.querySelectorAll('[data-field="name"], [data-field="mode"], [data-field="value"], [data-field="min"], [data-field="max"], [data-field="text"], [data-field="unit"]').forEach((el) => {
+      el.style.removeProperty("--field-ch");
+    });
+    return;
+  }
+
+  tbody.querySelectorAll("tr").forEach((tr) => {
+    const name = tr.querySelector('[data-field="name"]');
+    const mode = tr.querySelector('[data-field="mode"]');
+    const value = tr.querySelector('[data-field="value"]');
+    const min = tr.querySelector('[data-field="min"]');
+    const max = tr.querySelector('[data-field="max"]');
+    const text = tr.querySelector('[data-field="text"]');
+    const unit = tr.querySelector('[data-field="unit"]');
+
+    setPriceFieldWidth(name, name?.value || "纸种", 6, 14);
+    const modeText = mode?.selectedOptions?.[0]?.textContent || "单价";
+    setPriceFieldWidth(mode, modeText, 5, 8);
+    setPriceFieldWidth(value, value?.value || "1350", 5, 10);
+    setPriceFieldWidth(min, min?.value || "800", 4, 8);
+    setPriceFieldWidth(max, max?.value || "900", 4, 8);
+    setPriceFieldWidth(text, text?.value || "上调5", 5, 10);
+    setPriceFieldWidth(unit, unit?.value || PRICE_UNIT_DEFAULT, 4, 8);
+  });
+}
+
+function getPriceRowDisplayText(row) {
+  const mode = String(row?.mode || "number");
+  const unit = String(row?.unit || "").trim();
+  const suffix = unit ? ` ${unit}` : "";
+  if (mode === "range") {
+    const min = String(row?.min || "").trim();
+    const max = String(row?.max || "").trim();
+    if (!min && !max) return "-";
+    return `${min || "?"}-${max || "?"}${suffix}`;
+  }
+  if (mode === "text") {
+    const text = String(row?.text || "").trim();
+    return text ? `${text}${suffix}` : "-";
+  }
+  const value = String(row?.value || "").trim();
+  return value ? `${value}${suffix}` : "-";
+}
+
+function syncPriceDrawerModeUi() {
+  const mode = $("priceDrawerMode")?.value || "number";
+  const numberWrap = $("priceDrawerValueNumberWrap");
+  const rangeWrap = $("priceDrawerValueRangeWrap");
+  const textWrap = $("priceDrawerValueTextWrap");
+  if (numberWrap) {
+    const show = mode === "number";
+    numberWrap.hidden = !show;
+    numberWrap.style.display = show ? "" : "none";
+  }
+  if (rangeWrap) {
+    const show = mode === "range";
+    rangeWrap.hidden = !show;
+    rangeWrap.style.display = show ? "" : "none";
+  }
+  if (textWrap) {
+    const show = mode === "text";
+    textWrap.hidden = !show;
+    textWrap.style.display = show ? "" : "none";
+  }
+}
+
+function openPriceRowDrawer(index) {
+  const row = state.priceEditorRows[index];
+  if (!row) return;
+  state.editingPriceRowIndex = index;
+  $("priceDrawerName").value = row.name || "";
+  $("priceDrawerMode").value = row.mode || "number";
+  $("priceDrawerValue").value = row.value || "";
+  $("priceDrawerMin").value = row.min || "";
+  $("priceDrawerMax").value = row.max || "";
+  $("priceDrawerText").value = row.text || "";
+  $("priceDrawerUnit").value = row.unit || PRICE_UNIT_DEFAULT;
+  syncPriceDrawerModeUi();
+  $("priceRowDrawerModal").classList.remove("hidden");
+  document.body.classList.add("no-scroll");
+  setTimeout(() => $("priceDrawerName")?.focus(), 0);
+}
+
+function closePriceRowDrawer() {
+  $("priceRowDrawerModal").classList.add("hidden");
+  state.editingPriceRowIndex = -1;
+  if (!hasAnyModalOpen()) {
+    document.body.classList.remove("no-scroll");
+  }
+}
+
+function savePriceRowFromDrawer() {
+  const idx = state.editingPriceRowIndex;
+  if (!Number.isInteger(idx) || idx < 0 || idx >= state.priceEditorRows.length) return false;
+  const mode = $("priceDrawerMode").value || "number";
+  const next = {
+    name: $("priceDrawerName").value.trim(),
+    mode,
+    value: "",
+    min: "",
+    max: "",
+    text: "",
+    unit: $("priceDrawerUnit").value.trim() || PRICE_UNIT_DEFAULT,
+  };
+  if (mode === "range") {
+    next.min = $("priceDrawerMin").value.trim();
+    next.max = $("priceDrawerMax").value.trim();
+  } else if (mode === "text") {
+    next.text = $("priceDrawerText").value.trim();
+  } else {
+    next.value = $("priceDrawerValue").value.trim();
+  }
+  state.priceEditorRows[idx] = next;
+  return true;
+}
+
 function renderPriceEditorTable() {
   const tbody = $("priceTableBody");
   if (!tbody) return;
   if (!state.priceEditorRows.length) state.priceEditorRows = [createPriceRow()];
+
+  if (isMobileLayout()) {
+    tbody.innerHTML = state.priceEditorRows.map((row, idx) => `
+      <tr data-row-index="${idx}" class="price-row-summary" tabindex="0">
+        <td class="price-summary-main">
+          <span class="price-summary-name">${escapeAttr(row.name || "未命名纸种")}</span>
+          <span class="price-summary-meta">${escapeAttr(getPriceRowDisplayText(row))}</span>
+        </td>
+        <td class="price-summary-actions">
+          <button class="price-row-open" data-action="open-row" type="button" aria-label="编辑此行">编辑</button>
+          <button class="price-row-remove" data-action="remove-row" type="button" aria-label="删除此行" title="删除此行">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 3.75A2.25 2.25 0 0 0 6.75 6H4.5a1 1 0 1 0 0 2h.38l1.03 10.34A2.25 2.25 0 0 0 8.15 20.5h7.7a2.25 2.25 0 0 0 2.24-2.16L19.12 8h.38a1 1 0 1 0 0-2h-2.25A2.25 2.25 0 0 0 15 3.75H9Zm0 2h6a.25.25 0 0 1 .25.25V6h-6.5v-.25A.25.25 0 0 1 9 5.75Zm.25 5a1 1 0 0 1 1 1v4.5a1 1 0 1 1-2 0v-4.5a1 1 0 0 1 1-1Zm5.5 0a1 1 0 0 1 1 1v4.5a1 1 0 1 1-2 0v-4.5a1 1 0 0 1 1-1Z"/>
+            </svg>
+          </button>
+        </td>
+      </tr>
+    `).join("");
+    return;
+  }
 
   tbody.innerHTML = state.priceEditorRows.map((row, idx) => {
     const mode = row.mode || "number";
@@ -867,26 +1091,27 @@ function renderPriceEditorTable() {
     if (mode === "range") {
       valueCellHtml = `
         <div class="price-range-wrap">
-          <input data-field="min" value="${escapeAttr(row.min || "")}" placeholder="800" />
-          <input data-field="max" value="${escapeAttr(row.max || "")}" placeholder="900" />
+          <input data-field="min" value="${escapeAttr(row.min || "")}" placeholder="最低" />
+          <span class="price-range-sep">-</span>
+          <input data-field="max" value="${escapeAttr(row.max || "")}" placeholder="最高" />
         </div>
       `;
     } else if (mode === "text") {
-      valueCellHtml = `<input data-field="text" value="${escapeAttr(row.text || "")}" placeholder="上调5" />`;
+      valueCellHtml = `<input data-field="text" value="${escapeAttr(row.text || "")}" placeholder="说明" />`;
     }
     return `
       <tr data-row-index="${idx}">
-        <td><input data-field="name" value="${escapeAttr(row.name || "")}" placeholder="例如：工厂黄板" /></td>
-        <td>
+        <td class="price-cell price-cell-name" data-label="品类"><input data-field="name" value="${escapeAttr(row.name || "")}" placeholder="纸种" /></td>
+        <td class="price-cell price-cell-mode" data-label="类型">
           <select data-field="mode">
             <option value="number"${mode === "number" ? " selected" : ""}>单价</option>
             <option value="range"${mode === "range" ? " selected" : ""}>区间</option>
             <option value="text"${mode === "text" ? " selected" : ""}>文字</option>
           </select>
         </td>
-        <td>${valueCellHtml}</td>
-        <td><input data-field="unit" value="${escapeAttr(row.unit || "")}" placeholder="元/吨" /></td>
-        <td>
+        <td class="price-cell price-cell-value" data-label="值">${valueCellHtml}</td>
+        <td class="price-cell price-cell-unit" data-label="单位"><input data-field="unit" value="${escapeAttr(row.unit || "")}" placeholder="元/吨" /></td>
+        <td class="price-cell price-cell-action" data-label="操作">
           <button class="price-row-remove" data-action="remove-row" type="button" aria-label="删除此行" title="删除此行">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M9 3.75A2.25 2.25 0 0 0 6.75 6H4.5a1 1 0 1 0 0 2h.38l1.03 10.34A2.25 2.25 0 0 0 8.15 20.5h7.7a2.25 2.25 0 0 0 2.24-2.16L19.12 8h.38a1 1 0 1 0 0-2h-2.25A2.25 2.25 0 0 0 15 3.75H9Zm0 2h6a.25.25 0 0 1 .25.25V6h-6.5v-.25A.25.25 0 0 1 9 5.75Zm.25 5a1 1 0 0 1 1 1v4.5a1 1 0 1 1-2 0v-4.5a1 1 0 0 1 1-1Zm5.5 0a1 1 0 0 1 1 1v4.5a1 1 0 1 1-2 0v-4.5a1 1 0 0 1 1-1Z"/>
@@ -896,6 +1121,7 @@ function renderPriceEditorTable() {
       </tr>
     `;
   }).join("");
+  syncPriceEditorFieldWidths();
 }
 
 function syncMainPriceEditorFromContent() {
@@ -1018,7 +1244,7 @@ function clamp(v, min, max) {
 
 function closeLogoCropModal() {
   $("logoCropModal").classList.add("hidden");
-  if ($("settingsModal").classList.contains("hidden")) {
+  if (!hasAnyModalOpen()) {
     document.body.classList.remove("no-scroll");
   }
   state.logoCrop = null;
@@ -1266,7 +1492,7 @@ async function init() {
   });
   $("settingsMenuPanelBtn").addEventListener("click", openSettingsModal);
   $("settingsMenuAuthBtn").addEventListener("click", handleSettingsMenuAuthAction);
-  $("clearGuestDraftBtn").addEventListener("click", () => {
+  $("clearGuestDraftBtn").addEventListener("click", async () => {
     closeSettingsMenu();
     if (!state.isGuest) return;
     if (!hasGuestDraft()) {
@@ -1274,7 +1500,7 @@ async function init() {
       syncSettingsMenuUi();
       return;
     }
-    const ok = confirm("确认清空当前浏览器中的访客草稿吗？此操作不可撤销。");
+    const ok = await appConfirm("确认清空当前浏览器中的访客草稿吗？此操作不可撤销。");
     if (!ok) return;
     clearGuestDraft();
   });
@@ -1291,6 +1517,40 @@ async function init() {
   $("closeLoginBtn").addEventListener("click", closeLoginModal);
   $("cancelLoginBtn").addEventListener("click", closeLoginModal);
   $("loginMask").addEventListener("click", closeLoginModal);
+  $("closeDialogBtn").addEventListener("click", () => {
+    if (dialogState.mode === "alert") {
+      closeDialog(true);
+      return;
+    }
+    closeDialog(false);
+  });
+  $("dialogMask").addEventListener("click", () => {
+    if (dialogState.mode === "alert") {
+      closeDialog(true);
+      return;
+    }
+    closeDialog(false);
+  });
+  $("dialogCancelBtn").addEventListener("click", () => closeDialog(false));
+  $("dialogConfirmBtn").addEventListener("click", () => {
+    if (dialogState.mode === "prompt") {
+      closeDialog({ action: "confirm", value: $("dialogInput").value });
+      return;
+    }
+    closeDialog(true);
+  });
+  $("dialogInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      $("dialogConfirmBtn").click();
+    }
+  });
+  $("dialogInput").addEventListener("input", () => {
+    if (dialogState.mode !== "prompt") return;
+    const input = $("dialogInput");
+    if (!input) return;
+    input.value = input.value.replace(/\r?\n/g, "");
+  });
   $("closeLogoCropBtn").addEventListener("click", closeLogoCropModal);
   $("cancelLogoCropBtn").addEventListener("click", closeLogoCropModal);
   $("logoCropMask").addEventListener("click", closeLogoCropModal);
@@ -1301,22 +1561,53 @@ async function init() {
     syncHiddenContentFromMainPriceEditor();
     onType();
   });
-  $("priceTableBody").addEventListener("click", (e) => {
-    const btn = e.target.closest('[data-action="remove-row"]');
-    if (!btn) return;
-    const tr = btn.closest("tr");
-    if (!tr) return;
-    const idx = Number(tr.dataset.rowIndex);
-    if (!Number.isInteger(idx)) return;
-    state.priceEditorRows = getPriceEditorRowsFromDom();
+  $("closePriceDrawerBtn").addEventListener("click", closePriceRowDrawer);
+  $("cancelPriceDrawerBtn").addEventListener("click", closePriceRowDrawer);
+  $("priceDrawerMask").addEventListener("click", closePriceRowDrawer);
+  $("priceDrawerMode").addEventListener("change", syncPriceDrawerModeUi);
+  $("savePriceDrawerBtn").addEventListener("click", () => {
+    if (!savePriceRowFromDrawer()) return;
+    renderPriceEditorTable();
+    $("contentInput").value = buildContentFromPriceEditor(state.priceEditorRows, $("priceEditorExtra").value);
+    updateStats();
+    closePriceRowDrawer();
+    onType();
+  });
+  $("deletePriceDrawerBtn").addEventListener("click", () => {
+    const idx = state.editingPriceRowIndex;
+    if (!Number.isInteger(idx) || idx < 0 || idx >= state.priceEditorRows.length) return;
     state.priceEditorRows.splice(idx, 1);
     if (!state.priceEditorRows.length) state.priceEditorRows = [createPriceRow()];
     renderPriceEditorTable();
-    syncHiddenContentFromMainPriceEditor();
+    $("contentInput").value = buildContentFromPriceEditor(state.priceEditorRows, $("priceEditorExtra").value);
+    updateStats();
+    closePriceRowDrawer();
     onType();
+  });
+  $("priceTableBody").addEventListener("click", (e) => {
+    const tr = e.target.closest("tr");
+    if (!tr) return;
+    const idx = Number(tr.dataset.rowIndex);
+    if (!Number.isInteger(idx)) return;
+
+    const btn = e.target.closest('[data-action="remove-row"]');
+    if (btn) {
+      state.priceEditorRows = getPriceEditorRowsFromDom();
+      state.priceEditorRows.splice(idx, 1);
+      if (!state.priceEditorRows.length) state.priceEditorRows = [createPriceRow()];
+      renderPriceEditorTable();
+      syncHiddenContentFromMainPriceEditor();
+      onType();
+      return;
+    }
+
+    if (isMobileLayout()) {
+      openPriceRowDrawer(idx);
+    }
   });
   $("priceTableBody").addEventListener("input", () => {
     syncHiddenContentFromMainPriceEditor();
+    syncPriceEditorFieldWidths();
     onType();
   });
   $("priceTableBody").addEventListener("change", (e) => {
@@ -1326,8 +1617,19 @@ async function init() {
       state.priceEditorRows = getPriceEditorRowsFromDom();
       renderPriceEditorTable();
       syncHiddenContentFromMainPriceEditor();
+      syncPriceEditorFieldWidths();
       onType();
     }
+  });
+  $("priceTableBody").addEventListener("keydown", (e) => {
+    if (!isMobileLayout()) return;
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const tr = e.target.closest("tr.price-row-summary");
+    if (!tr) return;
+    e.preventDefault();
+    const idx = Number(tr.dataset.rowIndex);
+    if (!Number.isInteger(idx)) return;
+    openPriceRowDrawer(idx);
   });
   $("priceEditorExtra").addEventListener("input", () => {
     syncHiddenContentFromMainPriceEditor();
@@ -1383,7 +1685,10 @@ async function init() {
       return;
     }
     const guestDraft = state.isGuest ? readGuestDraft() : null;
-    const migrateGuestDraft = !!(guestDraft && confirm("检测到访客草稿。登录后是否迁移到当前账号？"));
+    let migrateGuestDraft = false;
+    if (guestDraft) {
+      migrateGuestDraft = await appConfirm("检测到访客草稿。登录后是否迁移到当前账号？");
+    }
     try {
       const d = await api("/api/login", "POST", { user_id: userId, password, merge_from_current: true });
       state.currentUser = d.display_user_id || d.user_id || userId;
@@ -1456,6 +1761,18 @@ async function init() {
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (!$("dialogModal").classList.contains("hidden")) {
+      if (dialogState.mode === "prompt" || dialogState.mode === "confirm") {
+        closeDialog(false);
+      } else {
+        closeDialog(true);
+      }
+      return;
+    }
+    if (!$("priceRowDrawerModal").classList.contains("hidden")) {
+      closePriceRowDrawer();
+      return;
+    }
     if (document.body.classList.contains("is-desktop-preview-focus")) {
       togglePreviewFocus(false);
       return;
@@ -1529,7 +1846,7 @@ async function init() {
   });
 
   $("batchBtn").addEventListener("click", async () => {
-    const raw = prompt("输入调整金额（如 +50 或 -30）", "+10");
+    const raw = await appPrompt("输入调整金额（如 +50 或 -30）", "+10", "批量调价", "例如 +50 或 -30");
     if (!raw) return;
     const cleaned = String(raw).trim().replace(/\s+/g, "").replace("＋", "+").replace("－", "-");
     const m = cleaned.match(/^([+-]?)(\d{1,5})$/);
@@ -1560,8 +1877,8 @@ async function init() {
     await refreshPreview();
   });
 
-  $("saveTemplateBtn").addEventListener("click", () => {
-    const name = prompt("请输入模板名称");
+  $("saveTemplateBtn").addEventListener("click", async () => {
+    const name = await appPrompt("请输入模板名称", "", "保存模板", "例如：周末调价模板");
     if (!name) return;
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -1580,7 +1897,7 @@ async function init() {
   $("deleteTemplateBtn").addEventListener("click", () => {
     const name = $("templateSelect").value;
     if (state.systemTemplates[name]) {
-      alert("系统模板不可删除");
+      appAlert("系统模板不可删除");
       return;
     }
     delete state.config.custom_templates[name];
@@ -1677,7 +1994,7 @@ async function init() {
       $("statusText").textContent = withGuestHint(`已生成 ${d.name}`);
       if (state.isGuest && !state.guestRegisterTipShown) {
         state.guestRegisterTipShown = true;
-        alert("已生成成功。建议注册一个用户：可以保存设置和内容，下次可直接继续使用。");
+        await appAlert("已生成成功。建议注册一个用户：可以保存设置和内容，下次可直接继续使用。", "提示");
       }
     } catch (e) {
       showStatusError(e.message || "生成失败");

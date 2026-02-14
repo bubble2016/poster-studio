@@ -537,6 +537,78 @@ select:focus-visible {
 .modal-panel-sm {
   max-height: 72vh;
 }
+.modal-actions.modal-actions-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.price-drawer-panel .modal-body {
+  display: grid;
+  gap: 8px;
+}
+.price-drawer-panel {
+  bottom: 0;
+  transition: none;
+}
+.drawer-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.drawer-row-2 {
+  grid-template-columns: 1fr 1fr;
+}
+.drawer-type-value-row {
+  align-items: start;
+}
+.drawer-value-slot {
+  min-width: 0;
+}
+.drawer-value-slot > div {
+  width: 100%;
+}
+.drawer-value-slot .drawer-inline-field {
+  grid-template-columns: 40px minmax(0, 1fr);
+}
+.drawer-range-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.drawer-range-input {
+  min-width: 0;
+  min-height: 42px;
+  padding: 9px 10px;
+  font-size: .92rem;
+}
+.drawer-range-sep {
+  color: #64748b;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1;
+}
+#priceDrawerValueNumberWrap[hidden],
+#priceDrawerValueRangeWrap[hidden],
+#priceDrawerValueTextWrap[hidden] {
+  display: none !important;
+}
+.drawer-inline-field {
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0;
+}
+.drawer-field-label {
+  font-size: .82rem;
+  color: #64748b;
+  text-align: right;
+  white-space: nowrap;
+}
+.drawer-inline-field input,
+.drawer-inline-field select {
+  min-height: 38px;
+  padding: 8px 10px;
+}
 .password-row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -550,6 +622,15 @@ select:focus-visible {
   color: #b42318;
   font-size: .84rem;
   margin-top: 2px;
+}
+.dialog-message {
+  margin: 0;
+  color: #334155;
+  font-size: .9rem;
+  line-height: 1.5;
+}
+.dialog-panel .modal-actions {
+  grid-template-columns: 1fr 1fr;
 }
 .crop-tip {
   margin: 0 0 10px;
@@ -643,9 +724,9 @@ select:focus-visible {
   margin: 8px 0 10px;
 }
 .price-row-remove {
-  width: 32px;
-  min-width: 32px;
-  min-height: 32px;
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
   padding: 0;
   border-radius: 8px;
   border: 1px solid #f3cad1;
@@ -659,6 +740,9 @@ select:focus-visible {
   width: 14px;
   height: 14px;
   fill: currentColor;
+}
+.price-row-remove-text {
+  display: none;
 }
 #logoCropCanvas {
   width: 100%;
@@ -981,6 +1065,130 @@ body.is-desktop-preview-focus .editor-col {
 }
 
 @media (max-width: 819px) {
+  #priceRowDrawerModal .price-drawer-panel {
+    top: 8vh;
+    bottom: auto;
+    left: 8px;
+    right: 8px;
+    max-height: 48vh;
+    border-radius: 14px;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, .2);
+    animation: none;
+  }
+  .price-editor-table-wrap {
+    border: none;
+    background: transparent;
+    margin-top: 6px;
+    overflow: visible;
+  }
+  .price-editor-table {
+    width: 100%;
+  }
+  .price-editor-table colgroup {
+    display: none;
+  }
+  .price-editor-table thead {
+    display: none;
+  }
+  .price-editor-table tbody {
+    display: grid;
+    gap: 8px;
+  }
+  .price-editor-table tbody tr.price-row-summary {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 7px 8px;
+    border: 1px solid #d6e2ef;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 4px 10px rgba(15, 23, 42, .05);
+    cursor: pointer;
+  }
+  .price-summary-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .price-summary-name {
+    color: #0f172a;
+    font-size: .88rem;
+    font-weight: 700;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .price-summary-meta {
+    color: #64748b;
+    font-size: .78rem;
+    line-height: 1.1;
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  .price-summary-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .price-row-open {
+    width: auto;
+    min-width: 48px;
+    min-height: 30px;
+    padding: 0 8px;
+    border-radius: 7px;
+    border: 1px solid #cbd8e6;
+    background: #fff;
+    color: #334155;
+    font-size: .75rem;
+    font-weight: 600;
+  }
+  .price-editor-table tbody td {
+    min-width: 0;
+    border: none;
+    padding: 0;
+  }
+  .price-row-remove {
+    width: 30px;
+    min-width: 30px;
+    min-height: 30px;
+    border-radius: 7px;
+    padding: 0;
+    gap: 0;
+  }
+  .price-row-remove-text { display: none; }
+  .drawer-inline-field {
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 6px;
+  }
+  .drawer-type-value-row .drawer-inline-field {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+  .drawer-field-label {
+    font-size: .8rem;
+  }
+  .drawer-inline-field input,
+  .drawer-inline-field select {
+    min-height: 36px;
+    padding: 7px 9px;
+    font-size: .88rem;
+  }
+  .drawer-range-wrap {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 10px;
+  }
+  .drawer-range-input {
+    min-height: 44px;
+    padding: 10px 10px;
+    font-size: .94rem;
+  }
+  .drawer-range-sep {
+    font-size: 1.12rem;
+  }
   .topbar {
     transition: padding .18s ease, margin-bottom .18s ease, border-radius .18s ease, box-shadow .18s ease;
   }
