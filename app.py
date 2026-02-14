@@ -1,8 +1,10 @@
-﻿import datetime
+﻿import base64
+import datetime
 import hashlib
 import io
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -233,6 +235,61 @@ def _normalize_cfg_paths(cfg):
         out[key] = _resolve_asset_path(out.get(key, ""))
     return out
 
+
+
+def _coerce_float(value, default, min_value=None, max_value=None):
+    default_val = float(default)
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        out = default_val
+    if not math.isfinite(out):
+        out = default_val
+    if min_value is not None:
+        out = max(float(min_value), out)
+    if max_value is not None:
+        out = min(float(max_value), out)
+    return out
+
+
+def _coerce_int(value, default, min_value=None, max_value=None):
+    default_val = int(default)
+    try:
+        out = int(float(value))
+    except (TypeError, ValueError):
+        out = default_val
+    if min_value is not None:
+        out = max(int(min_value), out)
+    if max_value is not None:
+        out = min(int(max_value), out)
+    return out
+
+
+def _coerce_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"1", "true", "yes", "on"}:
+            return True
+        if text in {"0", "false", "no", "off", ""}:
+            return False
+    if value is None:
+        return bool(default)
+    return bool(value)
+
+
+def _sanitize_runtime_cfg(raw_cfg):
+    cfg = {**DEFAULT_CONFIG, **(raw_cfg or {})}
+    cfg["bg_blur_radius"] = _coerce_int(cfg.get("bg_blur_radius"), DEFAULT_CONFIG["bg_blur_radius"], 0, 80)
+    cfg["bg_brightness"] = _coerce_float(cfg.get("bg_brightness"), DEFAULT_CONFIG["bg_brightness"], 0.2, 3.0)
+    cfg["card_opacity"] = _coerce_float(cfg.get("card_opacity"), DEFAULT_CONFIG["card_opacity"], 0.05, 1.0)
+    cfg["stamp_opacity"] = _coerce_float(cfg.get("stamp_opacity"), DEFAULT_CONFIG["stamp_opacity"], 0.05, 1.0)
+    cfg["watermark_opacity"] = _coerce_float(cfg.get("watermark_opacity"), DEFAULT_CONFIG["watermark_opacity"], 0.0, 0.8)
+    cfg["watermark_density"] = _coerce_float(cfg.get("watermark_density"), DEFAULT_CONFIG["watermark_density"], 0.5, 2.0)
+    cfg["jpeg_quality"] = _coerce_int(cfg.get("jpeg_quality"), DEFAULT_CONFIG["jpeg_quality"], 1, 100)
+    cfg["watermark_enabled"] = _coerce_bool(cfg.get("watermark_enabled"), DEFAULT_CONFIG["watermark_enabled"])
+    return cfg
 
 def _sanitize_user_id(user_id):
     user_id = (user_id or "").strip()
@@ -875,6 +932,7 @@ def api_admin_user_config(user_id):
     else:
         base = load_config(target_path) if os.path.isfile(target_path) else load_config(CONFIG_PATH)
         cfg = {**base, **cfg_patch}
+    cfg = _sanitize_runtime_cfg(cfg)
     save_config(target_path, cfg)
     return jsonify({"ok": True, "user_id": uid, "config": cfg})
 
@@ -958,7 +1016,8 @@ def api_preview():
     title = data.get("title", "")
     date_str = format_date_input(data.get("date", ""))
     try:
-        cfg = _normalize_cfg_paths({**_load_user_config(uid), **data.get("config", {})})
+        cfg = _sanitize_runtime_cfg({**_load_user_config(uid), **data.get("config", {})})
+        cfg = _normalize_cfg_paths(cfg)
         cache_id = _build_preview_cache_id(content, date_str, title, cfg)
         png_bytes = PREVIEW_CACHE.get(uid, cache_id)
         cache_hit = png_bytes is not None
@@ -968,13 +1027,25 @@ def api_preview():
             img.convert("RGB").save(buf, "PNG")
             png_bytes = buf.getvalue()
             PREVIEW_CACHE.set(uid, cache_id, png_bytes)
+        image_data = "data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii")
         valid, warnings = validate_content(content)
         image_url = f"/api/preview-image/{cache_id}"
+        _log_event(
+            logging.INFO,
+            "api_preview.ok",
+            user_id=uid,
+            cache_id=cache_id,
+            cache_hit=cache_hit,
+            title=(title or "")[:48],
+            date=date_str,
+        )
         return jsonify(
             {
                 "image": image_url,
                 "image_url": image_url,
+                "image_data": image_data,
                 "cache_hit": cache_hit,
+                "request_id": getattr(g, "request_id", ""),
                 "date": date_str,
                 "valid": valid,
                 "warnings": warnings,
@@ -982,16 +1053,18 @@ def api_preview():
         )
     except Exception:
         _log_exception("api_preview.failed", user_id=uid, title=title, date=date_str)
-        return jsonify({"error": "预览生成失败，请检查图片素材和参数后重试"}), 500
+        return jsonify({"error": "预览生成失败，请检查图片素材和参数后重试", "request_id": getattr(g, "request_id", "")}), 500
 
 
 @app.get("/api/preview-image/<cache_id>")
 def api_preview_image(cache_id):
     uid = _ensure_user_id()
     if not PREVIEW_ID_RE.match(str(cache_id or "")):
+        _log_event(logging.WARNING, "api_preview_image.invalid_id", user_id=uid, cache_id=str(cache_id or "")[:80])
         return jsonify({"error": "预览标识无效"}), 400
     data = PREVIEW_CACHE.get(uid, cache_id)
     if not data:
+        _log_event(logging.WARNING, "api_preview_image.cache_miss", user_id=uid, cache_id=cache_id)
         return jsonify({"error": "预览已过期，请重新生成"}), 404
     resp = Response(data, mimetype="image/png")
     resp.headers["Cache-Control"] = f"private, max-age={PREVIEW_CACHE_TTL_SECONDS}"
@@ -1009,7 +1082,8 @@ def api_generate():
     content = data.get("content", "")
     title = data.get("title", "") or "公告"
     date_str = format_date_input(data.get("date", ""))
-    cfg = _normalize_cfg_paths({**_load_user_config(uid), **data.get("config", {})})
+    cfg = _sanitize_runtime_cfg({**_load_user_config(uid), **data.get("config", {})})
+    cfg = _normalize_cfg_paths(cfg)
     export_format = (data.get("export_format") or cfg.get("export_format") or "PNG").upper()
     try:
         img = draw_poster(content, date_str, title, cfg).convert("RGB")
@@ -1077,7 +1151,7 @@ def api_config():
         data = _json_body()
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    cfg = {**DEFAULT_CONFIG, **data}
+    cfg = _sanitize_runtime_cfg({**DEFAULT_CONFIG, **data})
     save_config(_get_user_config_path(uid), cfg)
     return jsonify({"ok": True, "config": cfg})
 

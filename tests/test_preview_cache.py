@@ -1,3 +1,4 @@
+import base64
 import re
 
 from PIL import Image
@@ -49,6 +50,63 @@ def test_preview_cache_hit_skips_rerender(app_module, monkeypatch):
     image_resp = client.get(second_data["image_url"])
     assert image_resp.status_code == 200
     assert image_resp.mimetype == "image/png"
+
+
+def test_preview_returns_inline_image_data(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "draw_poster", lambda *_args, **_kwargs: Image.new("RGB", (24, 24), "white"))
+    monkeypatch.setattr(app_module, "PREVIEW_CACHE", FakePreviewCache())
+
+    client = app_module.app.test_client()
+    _set_user(client, "user_inline")
+    payload = {"title": "notice", "date": "2026-02-13", "content": "test content", "config": {}}
+
+    resp = client.post("/api/preview", json=payload)
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["image_data"].startswith("data:image/png;base64,")
+    png_bytes = base64.b64decode(data["image_data"].split(",", 1)[1])
+    assert png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_preview_invalid_numeric_config_is_sanitized(app_module, monkeypatch):
+    def fake_draw(_content, _date, _title, cfg):
+        assert isinstance(cfg["bg_blur_radius"], int)
+        assert 0 <= cfg["bg_blur_radius"] <= 80
+        assert isinstance(cfg["bg_brightness"], float)
+        assert 0.2 <= cfg["bg_brightness"] <= 3.0
+        assert isinstance(cfg["card_opacity"], float)
+        assert 0.05 <= cfg["card_opacity"] <= 1.0
+        assert isinstance(cfg["stamp_opacity"], float)
+        assert 0.05 <= cfg["stamp_opacity"] <= 1.0
+        assert isinstance(cfg["watermark_density"], float)
+        assert 0.5 <= cfg["watermark_density"] <= 2.0
+        assert isinstance(cfg["jpeg_quality"], int)
+        assert 1 <= cfg["jpeg_quality"] <= 100
+        return Image.new("RGB", (16, 16), "white")
+
+    monkeypatch.setattr(app_module, "draw_poster", fake_draw)
+    monkeypatch.setattr(app_module, "PREVIEW_CACHE", FakePreviewCache())
+
+    client = app_module.app.test_client()
+    _set_user(client, "user_sanitize")
+    payload = {
+        "title": "notice",
+        "date": "2026-02-13",
+        "content": "test content",
+        "config": {
+            "bg_blur_radius": "abc",
+            "bg_brightness": "NaN",
+            "card_opacity": None,
+            "stamp_opacity": "-9",
+            "watermark_density": "Infinity",
+            "jpeg_quality": "0",
+            "watermark_enabled": "false",
+        },
+    }
+
+    resp = client.post("/api/preview", json=payload)
+    assert resp.status_code == 200
+    assert resp.get_json()["image_data"].startswith("data:image/png;base64,")
 
 
 def test_preview_image_is_user_scoped(app_module, monkeypatch):

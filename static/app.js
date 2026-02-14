@@ -137,6 +137,7 @@ async function api(url, method = "GET", body = null) {
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
+  const requestId = res.headers.get("X-Request-Id") || "";
   const ct = res.headers.get("content-type") || "";
   let payload = null;
   if (ct.includes("application/json")) {
@@ -145,8 +146,13 @@ async function api(url, method = "GET", body = null) {
     const text = await res.text();
     payload = text ? { error: text } : {};
   }
+  if (payload && typeof payload === "object" && !payload.request_id && requestId) {
+    payload.request_id = requestId;
+  }
   if (!res.ok) {
-    throw new Error(payload.error || payload.message || `请求失败(${res.status})`);
+    const err = new Error(payload.error || payload.message || `请求失败(${res.status})`);
+    err.requestId = requestId || payload.request_id || "";
+    throw err;
   }
   return payload;
 }
@@ -1380,9 +1386,11 @@ async function refreshPreview() {
   try {
     const data = await api("/api/preview", "POST", payload);
     if (seq !== state.previewSeq) return;
-    const previewSrc = data.image_url || data.image;
-    if (!previewSrc) throw new Error("预览地址无效");
-    const loadPreviewWithRetry = (retriesLeft = 1) => {
+    const reqId = data.request_id ? String(data.request_id) : "";
+    const primaryPreviewSrc = data.image_data || data.image_url || data.image;
+    const fallbackPreviewSrc = data.image_url || data.image || "";
+    if (!primaryPreviewSrc) throw new Error("预览地址无效");
+    const loadPreviewWithRetry = (source, retriesLeft = 1, allowFallback = true) => {
       const preload = new Image();
       preload.onload = () => {
         if (seq !== state.previewSeq) return;
@@ -1392,24 +1400,35 @@ async function refreshPreview() {
       };
       preload.onerror = () => {
         if (seq !== state.previewSeq) return;
-        if (retriesLeft > 0) {
-          const nextSrc = /^data:/i.test(previewSrc)
-            ? previewSrc
-            : `${previewSrc}${previewSrc.includes("?") ? "&" : "?"}_retry=${Date.now()}`;
+        if (retriesLeft > 0 && !/^data:/i.test(source)) {
+          const nextSrc = `${source}${source.includes("?") ? "&" : "?"}_retry=${Date.now()}`;
           preload.src = nextSrc;
           retriesLeft -= 1;
           return;
         }
+        if (allowFallback && fallbackPreviewSrc && fallbackPreviewSrc !== source) {
+          loadPreviewWithRetry(fallbackPreviewSrc, 1, false);
+          return;
+        }
+        if ($("previewImage").src) {
+          $("statusText").textContent = "预览刷新失败，已保留上一张";
+          showStatusError(reqId ? `预览刷新失败，已保留上一张（请求号: ${reqId}）` : "预览刷新失败，已保留上一张");
+          return;
+        }
         setPreviewLoading("预览加载失败，请重试");
-        showStatusError("预览加载失败，请重试");
+        showStatusError(reqId ? `预览加载失败，请重试（请求号: ${reqId}）` : "预览加载失败，请重试");
       };
-      preload.src = previewSrc;
+      preload.src = source;
     };
-    loadPreviewWithRetry(1);
+    loadPreviewWithRetry(primaryPreviewSrc, 1, true);
   } catch (e) {
     if (seq !== state.previewSeq) return;
-    setPreviewLoading("预览生成失败");
-    showStatusError(e.message || "预览生成失败");
+    if (!$("previewImage").src) {
+      setPreviewLoading("预览生成失败");
+    }
+    const reqId = e?.requestId ? String(e.requestId) : "";
+    const msg = e.message || "预览生成失败";
+    showStatusError(reqId ? `${msg}（请求号: ${reqId}）` : msg);
   }
 }
 
