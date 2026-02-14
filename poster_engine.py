@@ -538,6 +538,23 @@ def batch_adjust_content(content, amount):
         p1, p2 = int(m.group(1)), int(m.group(2))
         return f"{max(0, p1 + amount)}-{max(0, p2 + amount)}"
 
+    def protect_ranges(text):
+        holders = []
+
+        def _store(m):
+            token = f"__RANGE_TOKEN_{len(holders)}__"
+            holders.append(repl_range(m))
+            return token
+
+        protected = re.sub(r"(\d{3,5})\s*[-~～至到]\s*(\d{3,5})", _store, text)
+        return protected, holders
+
+    def restore_ranges(text, holders):
+        out = text
+        for i, val in enumerate(holders):
+            out = out.replace(f"__RANGE_TOKEN_{i}__", val)
+        return out
+
     def adjust_line(line):
         raw = line or ""
         if not raw.strip():
@@ -551,13 +568,14 @@ def batch_adjust_content(content, amount):
         if not is_price_line:
             return raw
 
-        out = re.sub(r"(\d{3,5})\s*-\s*(\d{3,5})", repl_range, raw)
+        out, range_holders = protect_ranges(raw)
         out = re.sub(
             r"(上调|下调)\s*(\d{1,5})",
             lambda _: f"{'上调' if amount >= 0 else '下调'}{abs(amount)}",
             out,
         )
         out = re.sub(r"(?<!\d)(\d{3,5})(?!\d)", lambda m: str(max(0, int(m.group(1)) + amount)), out)
+        out = restore_ranges(out, range_holders)
         return out
 
     lines = txt.split("\n")

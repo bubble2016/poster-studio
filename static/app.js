@@ -11,6 +11,7 @@
   logoCrop: null,
   priceEditorRows: [],
   previewSeq: 0,
+  lastDateCheckKey: "",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -37,6 +38,73 @@ const RANGE_VALUE_FIELDS = [
   { inputId: "watermarkOpacity", valueId: "watermarkOpacityValue", format: (v) => `${Math.round((Number(v) || 0) * 100)}%` },
   { inputId: "watermarkDensity", valueId: "watermarkDensityValue", format: (v) => `${(Number(v) || 0).toFixed(1)}x` },
 ];
+
+function toTodayDateText() {
+  return toDateTextByOffset(0);
+}
+
+function toDateTextByOffset(offsetDays = 0, baseDate = new Date()) {
+  const date = new Date(baseDate.getTime());
+  date.setDate(date.getDate() + Number(offsetDays || 0));
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}年${m}月${d}日`;
+}
+
+function toDayKey(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function isRelativeDateToken(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return false;
+  return new Set(["今天", "明天", "后天", "昨天", "0", "1", "2", "-1", "today", "tomorrow", "yesterday"]).has(text);
+}
+
+function normalizeDateInputForRollover(raw, baseDate = new Date()) {
+  const text = String(raw || "").trim();
+  if (!text) return { shouldRefresh: false, value: text };
+  const lower = text.toLowerCase();
+  if (lower === "今天" || lower === "0" || lower === "today") return { shouldRefresh: true, value: toDateTextByOffset(1, baseDate) };
+  if (lower === "明天" || lower === "1" || lower === "tomorrow") return { shouldRefresh: true, value: toDateTextByOffset(2, baseDate) };
+  if (lower === "后天" || lower === "2") return { shouldRefresh: true, value: toDateTextByOffset(3, baseDate) };
+  if (lower === "昨天" || lower === "-1" || lower === "yesterday") return { shouldRefresh: true, value: toDateTextByOffset(0, baseDate) };
+  if (text === toDateTextByOffset(-1, baseDate)) return { shouldRefresh: true, value: toDateTextByOffset(0, baseDate) };
+  if (text === toDateTextByOffset(0, baseDate)) return { shouldRefresh: true, value: toDateTextByOffset(1, baseDate) };
+  if (text === toDateTextByOffset(1, baseDate)) return { shouldRefresh: true, value: toDateTextByOffset(2, baseDate) };
+  if (text === toDateTextByOffset(2, baseDate)) return { shouldRefresh: true, value: toDateTextByOffset(3, baseDate) };
+  return { shouldRefresh: false, value: text };
+}
+
+async function checkDateRolloverAndRefresh() {
+  const now = new Date();
+  const currentKey = toDayKey(now);
+  if (!state.lastDateCheckKey) {
+    state.lastDateCheckKey = currentKey;
+    return;
+  }
+  if (state.lastDateCheckKey === currentKey) return;
+  const previousDate = new Date(now.getTime());
+  previousDate.setDate(previousDate.getDate() - 1);
+  state.lastDateCheckKey = currentKey;
+  const dateInput = $("dateInput");
+  if (!dateInput) return;
+  const normalized = normalizeDateInputForRollover(dateInput.value, previousDate);
+  if (!normalized.shouldRefresh) return;
+  if (normalized.value !== dateInput.value.trim()) {
+    dateInput.value = normalized.value;
+  }
+  saveGuestDraft();
+  await refreshPreview();
+}
+
+function normalizeDateInputOnLoad(raw) {
+  return toTodayDateText();
+}
 
 function getStats(text) {
   const chars = (text || "").replace(/\s/g, "").length;
@@ -532,7 +600,7 @@ function formConfig() {
 
 function bindFromConfig(cfg) {
   $("titleInput").value = cfg.last_title || "调价通知";
-  $("dateInput").value = cfg.last_date || "今天";
+  $("dateInput").value = normalizeDateInputOnLoad(cfg.last_date);
   $("contentInput").value = cfg.last_content || "";
   syncMainPriceEditorFromContent();
 
@@ -1091,7 +1159,6 @@ async function refreshPreview() {
     const previewSrc = data.image_url || data.image;
     if (!previewSrc) throw new Error("预览地址无效");
     $("previewImage").src = previewSrc;
-    $("dateInput").value = data.date || $("dateInput").value;
     $("statusText").textContent = !data.valid && data.warnings.length ? data.warnings[0] : "预览已更新";
   } catch (e) {
     if (seq !== state.previewSeq) return;
@@ -1137,6 +1204,7 @@ async function init() {
   state.presets = data.presets || [];
 
   bindFromConfig(state.config);
+  state.lastDateCheckKey = toDayKey();
 
   document.querySelectorAll(".theme-swatch").forEach((btn) => {
     if (btn.dataset.color) btn.style.background = btn.dataset.color;
@@ -1359,6 +1427,17 @@ async function init() {
   });
   window.addEventListener("scroll", syncFooterNoteVisibility, { passive: true });
   window.addEventListener("scroll", syncTopbarCompactOnScroll, { passive: true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      checkDateRolloverAndRefresh().catch(() => {});
+    }
+  });
+  window.addEventListener("focus", () => {
+    checkDateRolloverAndRefresh().catch(() => {});
+  });
+  window.setInterval(() => {
+    checkDateRolloverAndRefresh().catch(() => {});
+  }, 30 * 1000);
   document.addEventListener("fullscreenchange", syncPreviewFocusUi);
   document.addEventListener("webkitfullscreenchange", syncPreviewFocusUi);
 
@@ -1427,13 +1506,13 @@ async function init() {
   });
 
   $("todayBtn").addEventListener("click", async () => {
-    $("dateInput").value = "今天";
+    $("dateInput").value = toDateTextByOffset(0);
     saveGuestDraft();
     await refreshPreview();
   });
 
   $("tomorrowBtn").addEventListener("click", async () => {
-    $("dateInput").value = "明天";
+    $("dateInput").value = toDateTextByOffset(1);
     saveGuestDraft();
     await refreshPreview();
   });
