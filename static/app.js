@@ -186,7 +186,6 @@ function syncSettingsMenuUi() {
     clearGuestDraftBtn.disabled = !canClear;
   }
 
-  // 登录后将“打开设置”置于“退出登录”之前，减少误触退出。
   if (authBtn && panelBtn && authBtn.parentNode === panelBtn.parentNode) {
     if (loggedIn) {
       authBtn.parentNode.insertBefore(panelBtn, authBtn);
@@ -221,7 +220,6 @@ async function handleSettingsMenuAuthAction() {
     return;
   }
   try {
-    // 退出前自动保存当前用户设置，避免下次登录需要重复配置。
     state.config = buildConfigPayloadForSave();
     await api("/api/config", "POST", state.config);
   } catch (_) {}
@@ -483,7 +481,8 @@ function clearGuestDraft(silent = false) {
   } catch (_) {}
   syncSettingsMenuUi();
   if (!silent) {
-    $("statusText").textContent = "已清空访客本地草稿";
+    const statusText = $("statusText");
+    if (statusText) statusText.textContent = "已清空访客本地草稿";
   }
 }
 
@@ -525,7 +524,6 @@ function syncSettingsPaneHeight() {
   const basePane = $("settingsPaneBase");
   if (!basePane || basePane.hidden) return;
 
-  // 以“基础信息”面板为基准，统一其他面板最小高度，避免切换时跳动。
   basePane.style.minHeight = "0px";
   const baseHeight = Math.ceil(basePane.scrollHeight);
   if (!baseHeight) return;

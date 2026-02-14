@@ -169,7 +169,6 @@ def _sanitize_user_id(user_id):
     user_id = (user_id or "").strip()
     if not user_id:
         return ""
-    # 仅允许字母、数字、下划线、短横线，避免路径注入。
     user_id = re.sub(r"[^0-9A-Za-z_-]", "", user_id)
     return user_id[:64]
 
@@ -253,7 +252,6 @@ def _load_user_config(user_id):
     user_path = _get_user_config_path(user_id)
     if os.path.isfile(user_path):
         return load_config(user_path)
-    # 新用户首次进入：继承站点默认配置，并给一个随机预设背景。
     cfg = load_config(CONFIG_PATH)
     if not cfg.get("bg_image_path"):
         presets = list(PresetGenerator.get_presets(BASE_DIR).values())
@@ -262,7 +260,6 @@ def _load_user_config(user_id):
             cfg["bg_mode"] = "preset"
             cfg["bg_image_path"] = _public_path(picked)
     if _is_guest_user(user_id):
-        # 访客模式默认不展示站点素材，避免误用他人品牌元素。
         cfg["logo_image_path"] = ""
         cfg["stamp_image_path"] = ""
         cfg["qrcode_image_path"] = ""
@@ -294,7 +291,6 @@ def _is_owned_output(relpath, abs_path, user_id):
     if owner:
         return owner == uid
 
-    # 兼容旧数据：路径如 outputs/<user_id>/xxx，视为该用户文件。
     try:
         outputs_rel = os.path.relpath(abs_path, outputs_root).replace("\\", "/")
     except Exception:
@@ -574,7 +570,6 @@ def api_login():
         if not check_password_hash(user_hash, password):
             return jsonify({"error": "密码错误"}), 401
     else:
-        # 首次注册新用户，或为历史用户首次补充密码。
         users[uid] = generate_password_hash(password)
         _save_users(users)
 

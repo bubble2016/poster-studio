@@ -117,12 +117,12 @@ SYSTEM_TEMPLATE_META = {
     "放假模板": {"is_holiday": True},
 }
 DEFAULT_CONFIG = {
-    "shop_name": "云泽西关打包站",
-    "shop_name_hist": ["云泽西关打包站"],
-    "address": "古城区中山大道六和辅路东侧100米院内",
-    "address_hist": ["古城区中山大道六和辅路东侧100米院内"],
-    "phone": "13826495317",
-    "phone_hist": ["13826495317"],
+    "shop_name": "环太平洋废纸回收打包站",
+    "shop_name_hist": ["环太平洋废纸回收打包站"],
+    "address": "太平洋基里巴斯群岛101街区",
+    "address_hist": ["太平洋基里巴斯群岛101街区"],
+    "phone": "1234567890",
+    "phone_hist": ["1234567890"],
     "slogan": "诚信经营 · 现金结算 · 假货勿扰",
     "slogan_hist": ["诚信经营 · 现金结算 · 假货勿扰"],
     "bg_image_path": "",
@@ -560,7 +560,6 @@ def batch_adjust_content(content, amount):
         if not raw.strip():
             return raw
 
-        # 价格行判定：包含“元/吨/上调/下调”，或是“【品名】：1234”这类结构（允许无单位）。
         is_price_line = bool(
             re.search(r"(元|吨|上调|下调)", raw)
             or re.search(r"【[^】]{1,30}】\s*[：:]\s*(?:上调|下调|\d{3,5})", raw)
@@ -700,7 +699,6 @@ def draw_poster(content, date_str, title, cfg):
     cw = 920
     cx = (w - cw) // 2
     
-    # Calculate Layout
     lines = (content or "").split("\n")
     is_holiday_mode = "放假" in (title or "")
     layout_items, sim_y = _calculate_layout_lines(lines, cw, is_holiday_mode, get_font)
@@ -711,7 +709,6 @@ def draw_poster(content, date_str, title, cfg):
     footer_start_y = cy + 500 + sim_y - 10
 
     style = cfg.get("card_style", "single")
-    # 兼容旧配置：已下线样式统一回退为单张。
     if style in {"fold", "sidebar", "soft", "outline_pro", "outline", "ink", "neon"}:
         style = "single"
     alpha = int(float(cfg.get("card_opacity", 1.0)) * 255)
@@ -728,13 +725,11 @@ def draw_poster(content, date_str, title, cfg):
         back_alpha = min(255, int(alpha * 0.9) + 28)
         shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         sd = ImageDraw.Draw(shadow)
-        # 后层整体阴影：拉开与背景的距离
         sd.rounded_rectangle(
             [(cx + back_dx + 8, cy + back_dy + 10), (cx + cw + back_dx + 8, cy + ch + back_dy + 10)],
             radius=42,
             fill=(0, 0, 0, 76),
         )
-        # 前层对后层的投影：强调两层间距
         sd.rounded_rectangle(
             [(cx + 10, cy + 12), (cx + cw + 10, cy + ch + 12)],
             radius=40,
@@ -759,7 +754,6 @@ def draw_poster(content, date_str, title, cfg):
 
         double_overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         dod = ImageDraw.Draw(double_overlay)
-        # 后层顶部轻微高光，避免灰板感
         for i in range(16):
             a = int(42 * (1 - i / 16))
             dod.line(
@@ -767,7 +761,6 @@ def draw_poster(content, date_str, title, cfg):
                 fill=(255, 255, 255, a),
                 width=1,
             )
-        # 前层右下边缘投影，让层级更清晰
         for i in range(24):
             a = int(54 * (1 - i / 24))
             dod.line(
@@ -792,7 +785,6 @@ def draw_poster(content, date_str, title, cfg):
 
         shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         sd = ImageDraw.Draw(shadow)
-        # 底层纸张整体阴影 + 顶层落影，强化两层距离。
         sd.rounded_rectangle(
             [(cx + back_dx + 18, cy + back_dy + 16), (cx + cw + back_dx + 18, cy + ch + back_dy + 16)],
             radius=40,
@@ -805,7 +797,6 @@ def draw_poster(content, date_str, title, cfg):
         )
         img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(20)))
 
-        # 底层纸张做轻微旋转，模拟“随意放置”。
         pad = 88
         back_sheet = Image.new("RGBA", (cw + pad * 2, ch + pad * 2), (0, 0, 0, 0))
         bsd = ImageDraw.Draw(back_sheet)
@@ -838,7 +829,6 @@ def draw_poster(content, date_str, title, cfg):
 
         stack_overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         sod = ImageDraw.Draw(stack_overlay)
-        # 顶层右/下边缘细投影，让“压在上面”的感觉更明显。
         for i in range(22):
             a = int(56 * (1 - i / 22))
             sod.line(
@@ -858,13 +848,11 @@ def draw_poster(content, date_str, title, cfg):
         img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(16)))
         dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=40, fill=(255, 255, 255, alpha))
         fs = 216
-        # 右下角挖空：底部不再是纸张，直接透出背景图。
         dc.polygon([(cx + cw, cy + ch), (cx + cw, cy + ch - fs), (cx + cw - fs, cy + ch)], fill=(0, 0, 0, 0))
 
         fold = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         fd = ImageDraw.Draw(fold)
 
-        # 折页投影：落在背景与卡片边缘上，增强翻页悬浮感。
         for i in range(34):
             a = int(46 * (1 - i / 34))
             fd.line(
@@ -873,7 +861,6 @@ def draw_poster(content, date_str, title, cfg):
                 width=2,
             )
 
-        # 抗锯齿折页：局部 4x 超采样后缩放回原图。
         fold_pad = 26
         fold_inset = 12
         tile_left = cx + cw - fs - fold_pad
@@ -894,15 +881,11 @@ def draw_poster(content, date_str, title, cfg):
         p_left = (cx + cw - fs + fold_inset, cy + ch - 2)
         p_inner = (cx + cw - int(fs * 0.54), cy + ch - int(fs * 0.54))
 
-        # 正面折页（亮）
         hd.polygon([hp(*p_corner), hp(*p_top), hp(*p_left)], fill=(248, 248, 248, min(255, alpha + 16)))
-        # 背面折页（暗）
         hd.polygon([hp(*p_corner), hp(*p_top), hp(*p_inner)], fill=(222, 224, 228, 236))
 
-        # 折痕线
         hd.line([hp(*p_left), hp(*p_top)], fill=(184, 188, 196, 220), width=max(3, scale * 2))
 
-        # 亮面渐变
         grad_steps = fs - fold_inset - 4
         for i in range(max(1, grad_steps)):
             t = i / max(1, grad_steps - 1)
@@ -914,7 +897,6 @@ def draw_poster(content, date_str, title, cfg):
             y2 = cy + ch - 2 - i
             hd.line([hp(x1, y1), hp(x2, y2)], fill=(shade, shade, shade, a), width=scale)
 
-        # 边缘高光
         for i in range(8):
             a = int(68 * (1 - i / 8))
             hd.line(
