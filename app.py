@@ -2,17 +2,20 @@
 import hashlib
 import io
 import json
+import logging
 import os
 import random
 import re
 import shutil
 import string
+import tempfile
 import threading
 import time
 import uuid
 import zipfile
 
-from flask import Flask, Response, jsonify, render_template, request, send_file, session
+from flask import Flask, Response, g, has_request_context, jsonify, render_template, request, send_file, session
+from PIL import Image, UnidentifiedImageError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from poster_engine import (
@@ -57,16 +60,64 @@ PREVIEW_CACHE_PREFIX = os.environ.get("POSTER_PREVIEW_CACHE_PREFIX", "poster:pre
 PREVIEW_CACHE_MAX_LOCAL_ITEMS = max(16, int(os.environ.get("POSTER_PREVIEW_CACHE_LOCAL_MAX", "128")))
 PREVIEW_ID_RE = re.compile(r"^[0-9a-f]{64}$")
 ADMIN_TOKEN = (os.environ.get("POSTER_ADMIN_TOKEN") or "").strip()
+ENV_NAME = str(os.environ.get("POSTER_ENV") or os.environ.get("FLASK_ENV") or "").strip().lower()
+IS_PRODUCTION = ENV_NAME in {"prod", "production"}
+SESSION_COOKIE_SECURE = str(
+    os.environ.get("POSTER_SESSION_COOKIE_SECURE", "1" if IS_PRODUCTION else "0")
+).strip().lower() in {"1", "true", "yes", "on"}
+LOGIN_WINDOW_SECONDS = max(60, int(os.environ.get("POSTER_LOGIN_WINDOW_SECONDS", "600")))
+LOGIN_MAX_ATTEMPTS = max(3, int(os.environ.get("POSTER_LOGIN_MAX_ATTEMPTS", "8")))
+LOGIN_LOCK_SECONDS = max(60, int(os.environ.get("POSTER_LOGIN_LOCK_SECONDS", "600")))
+MAX_UPLOAD_IMAGE_PIXELS = max(1_000_000, int(os.environ.get("POSTER_UPLOAD_MAX_PIXELS", "40000000")))
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(USER_CONFIG_DIR, exist_ok=True)
 _OUTPUT_META_LOCK = threading.Lock()
+_LOGIN_FAIL_LOCK = threading.Lock()
+_LOGIN_FAIL_BUCKETS = {}
 
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
-app.secret_key = os.environ.get("POSTER_APP_SECRET", "replace-this-in-production")
+app.secret_key = (os.environ.get("POSTER_APP_SECRET") or "").strip()
+if IS_PRODUCTION and (not app.secret_key or app.secret_key == "replace-this-in-production"):
+    raise RuntimeError("生产环境必须设置 POSTER_APP_SECRET，且不能使用默认值")
+if not app.secret_key:
+    app.secret_key = "replace-this-in-production"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = SESSION_COOKIE_SECURE
+app.config["PERMANENT_SESSION_LIFETIME"] = datetime.timedelta(days=14)
+LOGGER = logging.getLogger("poster_app")
+if not LOGGER.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s"))
+    LOGGER.addHandler(handler)
+LOGGER.setLevel(logging.INFO)
+if Redis is None:
+    LOGGER.warning("redis_not_available | %s", json.dumps({"cache": "local_only"}, ensure_ascii=False))
+
+
+def _log_event(level, event, **context):
+    payload = {}
+    if has_request_context():
+        payload["request_id"] = getattr(g, "request_id", "")
+        payload["path"] = request.path
+        payload["method"] = request.method
+    payload.update(context)
+    msg = f"{event} | {json.dumps(payload, ensure_ascii=False, default=str)}"
+    LOGGER.log(level, msg)
+
+
+def _log_exception(event, **context):
+    payload = {}
+    if has_request_context():
+        payload["request_id"] = getattr(g, "request_id", "")
+        payload["path"] = request.path
+        payload["method"] = request.method
+    payload.update(context)
+    LOGGER.exception("%s | %s", event, json.dumps(payload, ensure_ascii=False, default=str))
 
 
 class PreviewCache:
@@ -88,6 +139,7 @@ class PreviewCache:
             self._redis = cli
         except Exception:
             self._redis = None
+            _log_exception("preview_cache.redis_init_failed", redis_url=redis_url)
 
     def _key(self, user_id, cache_id):
         return f"{PREVIEW_CACHE_PREFIX}:{user_id}:{cache_id}"
@@ -99,7 +151,7 @@ class PreviewCache:
                 if data:
                     return data
             except RedisError:
-                pass
+                _log_event(logging.WARNING, "preview_cache.redis_get_failed", user_id=user_id, cache_id=cache_id)
         local_key = (user_id, cache_id)
         now = time.time()
         with self._lock:
@@ -117,7 +169,7 @@ class PreviewCache:
             try:
                 self._redis.setex(self._key(user_id, cache_id), PREVIEW_CACHE_TTL_SECONDS, data)
             except RedisError:
-                pass
+                _log_event(logging.WARNING, "preview_cache.redis_set_failed", user_id=user_id, cache_id=cache_id)
         local_key = (user_id, cache_id)
         expires_at = time.time() + PREVIEW_CACHE_TTL_SECONDS
         with self._lock:
@@ -132,6 +184,20 @@ class PreviewCache:
 
 
 PREVIEW_CACHE = PreviewCache()
+
+
+@app.before_request
+def _set_request_id():
+    raw = (request.headers.get("X-Request-Id") or "").strip()
+    g.request_id = raw[:64] if raw else uuid.uuid4().hex[:12]
+
+
+@app.after_request
+def _append_request_id(resp):
+    req_id = getattr(g, "request_id", "")
+    if req_id:
+        resp.headers["X-Request-Id"] = req_id
+    return resp
 
 
 def _sanitize_filename(name):
@@ -213,12 +279,12 @@ def _load_users():
             data = json.load(f)
         return data if isinstance(data, dict) else {}
     except Exception:
+        _log_exception("users.load_failed", path=USERS_PATH)
         return {}
 
 
 def _save_users(users):
-    with open(USERS_PATH, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
+    _atomic_write_json(USERS_PATH, users)
 
 
 def _load_output_index():
@@ -229,12 +295,48 @@ def _load_output_index():
             data = json.load(f)
         return data if isinstance(data, dict) else {}
     except Exception:
+        _log_exception("output_index.load_failed", path=OUTPUT_META_PATH)
         return {}
 
 
 def _save_output_index(data):
-    with open(OUTPUT_META_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    _atomic_write_json(OUTPUT_META_PATH, data)
+
+
+def _atomic_write_json(path, data):
+    folder = os.path.dirname(path) or "."
+    os.makedirs(folder, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=".tmp_", suffix=".json", dir=folder)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+        raise
+
+
+def _validate_uploaded_image(path):
+    try:
+        with Image.open(path) as img:
+            img.verify()
+        with Image.open(path) as img2:
+            width, height = img2.size
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+        return False, "图片文件无效或已损坏"
+    except Exception:
+        _log_exception("upload.image_verify_failed", path=path)
+        return False, "图片校验失败，请重试"
+    if width <= 0 or height <= 0:
+        return False, "图片尺寸无效"
+    if width * height > MAX_UPLOAD_IMAGE_PIXELS:
+        return False, f"图片像素过大，最大支持 {MAX_UPLOAD_IMAGE_PIXELS} 像素"
+    return True, ""
 
 
 def _record_output_owner(relpath, user_id):
@@ -316,6 +418,54 @@ def _json_body():
     return data
 
 
+def _client_ip():
+    xff = (request.headers.get("X-Forwarded-For") or "").strip()
+    if xff:
+        return xff.split(",")[0].strip()[:128]
+    return (request.remote_addr or "unknown")[:128]
+
+
+def _login_bucket_key(user_id):
+    return f"{_sanitize_user_id(user_id)}|{_client_ip()}"
+
+
+def _is_login_locked(user_id):
+    now = time.time()
+    key = _login_bucket_key(user_id)
+    with _LOGIN_FAIL_LOCK:
+        item = _LOGIN_FAIL_BUCKETS.get(key)
+        if not item:
+            return False, 0
+        lock_until = float(item.get("lock_until", 0.0))
+        if lock_until > now:
+            wait = int(lock_until - now)
+            return True, max(1, wait)
+        if float(item.get("window_start", 0.0)) + LOGIN_WINDOW_SECONDS <= now:
+            _LOGIN_FAIL_BUCKETS.pop(key, None)
+    return False, 0
+
+
+def _register_login_failure(user_id):
+    now = time.time()
+    key = _login_bucket_key(user_id)
+    with _LOGIN_FAIL_LOCK:
+        item = _LOGIN_FAIL_BUCKETS.get(key)
+        if (not item) or float(item.get("window_start", 0.0)) + LOGIN_WINDOW_SECONDS <= now:
+            item = {"window_start": now, "count": 0, "lock_until": 0.0}
+        item["count"] = int(item.get("count", 0)) + 1
+        if item["count"] >= LOGIN_MAX_ATTEMPTS:
+            item["lock_until"] = now + LOGIN_LOCK_SECONDS
+            item["window_start"] = now
+            item["count"] = 0
+        _LOGIN_FAIL_BUCKETS[key] = item
+
+
+def _clear_login_failures(user_id):
+    key = _login_bucket_key(user_id)
+    with _LOGIN_FAIL_LOCK:
+        _LOGIN_FAIL_BUCKETS.pop(key, None)
+
+
 def _build_preview_cache_id(content, date_str, title, cfg):
     payload = {
         "content": content or "",
@@ -389,7 +539,7 @@ def _user_last_active_timestamp(user_id):
         try:
             ts = max(ts, os.path.getmtime(cfg_path))
         except Exception:
-            pass
+            _log_event(logging.WARNING, "user_last_active.mtime_failed", user_id=uid, path=cfg_path)
     with _OUTPUT_META_LOCK:
         idx = _load_output_index()
     for meta in idx.values():
@@ -402,7 +552,7 @@ def _user_last_active_timestamp(user_id):
             parsed = datetime.datetime.fromisoformat(created)
             ts = max(ts, parsed.timestamp())
         except Exception:
-            pass
+            _log_event(logging.WARNING, "user_last_active.parse_failed", user_id=uid, created_at=created)
     return ts
 
 
@@ -432,7 +582,7 @@ def _admin_delete_user_data(user_id, include_outputs=True):
             os.remove(cfg_path)
             deleted["removed_config"] = True
         except Exception:
-            pass
+            _log_exception("admin_delete.remove_config_failed", user_id=uid, path=cfg_path)
 
     removed_relpaths = []
     with _OUTPUT_META_LOCK:
@@ -457,14 +607,14 @@ def _admin_delete_user_data(user_id, include_outputs=True):
                 os.remove(abs_path)
                 deleted["removed_outputs"] += 1
             except Exception:
-                pass
+                _log_exception("admin_delete.remove_output_failed", user_id=uid, path=abs_path)
         user_output_dir = os.path.join(OUTPUT_DIR, uid)
         if os.path.isdir(user_output_dir):
             try:
                 shutil.rmtree(user_output_dir)
                 deleted["removed_output_dir"] = True
             except Exception:
-                pass
+                _log_exception("admin_delete.remove_output_dir_failed", user_id=uid, path=user_output_dir)
     return deleted
 
 
@@ -563,15 +713,23 @@ def api_login():
     if len(password) < 4:
         return jsonify({"error": "密码不能为空，且至少 4 位"}), 400
 
+    locked, wait_seconds = _is_login_locked(uid)
+    if locked:
+        _log_event(logging.WARNING, "auth.login_locked", user_id=uid, wait_seconds=wait_seconds)
+        return jsonify({"error": f"登录尝试过于频繁，请 {wait_seconds} 秒后重试"}), 429
+
     users = _load_users()
     has_user_profile = os.path.isfile(_get_user_config_path(uid))
     user_hash = users.get(uid, "")
     if user_hash:
         if not check_password_hash(user_hash, password):
+            _register_login_failure(uid)
+            _log_event(logging.WARNING, "auth.login_wrong_password", user_id=uid)
             return jsonify({"error": "密码错误"}), 401
     else:
         users[uid] = generate_password_hash(password)
         _save_users(users)
+    _clear_login_failures(uid)
 
     current_uid = _ensure_user_id()
     merge_from_current = bool(data.get("merge_from_current", True))
@@ -776,6 +934,13 @@ def api_upload():
     filename = f"{uuid.uuid4().hex}{ext}"
     path = os.path.join(UPLOAD_DIR, filename)
     f.save(path)
+    ok, msg = _validate_uploaded_image(path)
+    if not ok:
+        try:
+            os.remove(path)
+        except Exception:
+            _log_exception("upload.cleanup_failed", path=path)
+        return jsonify({"error": msg}), 400
     return jsonify({"path": _public_path(path)})
 
 
@@ -813,6 +978,7 @@ def api_preview():
             }
         )
     except Exception:
+        _log_exception("api_preview.failed", user_id=uid, title=title, date=date_str)
         return jsonify({"error": "预览生成失败，请检查图片素材和参数后重试"}), 500
 
 
@@ -845,6 +1011,7 @@ def api_generate():
     try:
         img = draw_poster(content, date_str, title, cfg).convert("RGB")
     except Exception:
+        _log_exception("api_generate.failed", user_id=uid, title=title, date=date_str, export_format=export_format)
         return jsonify({"error": "生成失败，请检查图片素材和参数后重试"}), 500
 
     safe_title = _sanitize_filename(title)
