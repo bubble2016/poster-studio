@@ -1,10 +1,10 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>管理后台 | 海报系统</title>
-  <link rel="icon" href="/favicon.ico?v=20260213" type="image/x-icon" />
+  <link rel="icon" href="/favicon.ico?v=20260214" type="image/x-icon" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -130,7 +130,7 @@
     <section class="top">
       <div>
         <h1 class="title">管理后台</h1>
-        <p class="sub">用户总览与数据导出/备份</p>
+        <p class="sub">用户总览与数据导出、备份</p>
       </div>
       <a href="/" class="pill">返回主系统</a>
     </section>
@@ -140,7 +140,7 @@
         <input id="tokenInput" class="token" type="password" placeholder="输入 POSTER_ADMIN_TOKEN" autocomplete="off" />
         <button id="loadUsersBtn" class="primary" type="button">刷新用户列表</button>
       </div>
-      <p class="hint">支持请求头 `X-Admin-Token`，令牌仅保存在当前浏览器本地。</p>
+      <p class="hint">通过请求头 `X-Admin-Token` 鉴权。令牌仅保存在当前浏览器本地。</p>
       <div id="statusText" class="status">等待操作</div>
     </section>
 
@@ -156,9 +156,9 @@
 
     <section class="panel">
       <div class="row">
-        <input id="cleanupDaysInput" class="token" type="number" min="0" max="3650" value="30" placeholder="清理多少天前未活跃的游客" />
-        <button id="cleanupGuestsBtn" class="ghost" type="button">清理游客（保留导出文件）</button>
-        <button id="cleanupGuestsWithOutputsBtn" class="ghost" type="button">清理游客（含导出文件）</button>
+        <input id="cleanupDaysInput" class="token" type="number" min="0" max="3650" value="30" placeholder="清理多少天前未活跃的访客" />
+        <button id="cleanupGuestsBtn" class="ghost" type="button">清理访客（保留导出文件）</button>
+        <button id="cleanupGuestsWithOutputsBtn" class="ghost" type="button">清理访客（含导出文件）</button>
       </div>
       <p class="hint">仅清理 `guest_` 账号。按最后活跃时间判断（配置文件或导出记录）。</p>
     </section>
@@ -174,7 +174,7 @@
             <tr>
               <th>用户ID</th>
               <th>显示名</th>
-              <th>游客</th>
+              <th>访客</th>
               <th>已设密码</th>
               <th>有配置</th>
               <th>导出数</th>
@@ -189,6 +189,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/admin.js?v=20260213a"></script>
+  <script src="/static/admin.js?v=20260214a"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-const TOKEN_KEY = "poster_admin_token_v1";
+﻿const TOKEN_KEY = "poster_admin_token_v1";
 
 function $(id) {
   return document.getElementById(id);
@@ -155,7 +155,7 @@ async function handleCleanupGuests(includeOutputs) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ days, include_outputs: includeOutputs }),
   });
-  setStatus(`已清理 ${data.removed_count || 0} 个游客账号`, "ok");
+  setStatus(`已清理 ${data.removed_count || 0} 个访客账号`, "ok");
   await refreshUsers();
 }
 
@@ -219,7 +219,7 @@ function wireActions() {
 
   $("cleanupGuestsWithOutputsBtn").addEventListener("click", async () => {
     try {
-      const ok = confirm("此操作会删除游客导出文件，是否继续？");
+      const ok = confirm("此操作会删除访客导出文件，是否继续？");
       if (!ok) return;
       await handleCleanupGuests(true);
     } catch (e) {
