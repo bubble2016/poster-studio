@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=20260214m7" />
+  <link rel="stylesheet" href="/static/style.css?v=20260215m6" />
 </head>
 <body>
   <div class="bg-orb orb-a"></div>
@@ -53,6 +53,7 @@
         <div id="previewStage" class="preview-stage is-loading">
           <div id="previewPlaceholder" class="preview-placeholder">正在生成预览...</div>
           <img id="previewImage" alt="海报预览" />
+          <div id="previewFocusToast" class="preview-focus-toast" aria-live="polite" hidden></div>
         </div>
       </section>
 
@@ -104,9 +105,18 @@
           <div class="stats" id="statsText">0 字 · 0 行</div>
         </section>
 
-        <section class="card">
-          <div class="section-head"><h2>模板管理</h2></div>
-          <div class="field-grid">
+        <section class="card template-manager-card" id="templateManagerCard">
+          <div class="section-head template-manager-head">
+            <h2>模板管理</h2>
+            <div class="template-toggle-wrap">
+              <button id="templateManagerToggleBtn" class="ghost-btn template-manager-toggle" type="button" aria-expanded="false" aria-controls="templateManagerBody">展开</button>
+              <aside id="templateManagerTip" class="template-manager-tip" hidden>
+                <p>点击展开模板切换、管理与导出格式设置</p>
+                <button id="templateManagerTipAcknowledgeBtn" class="template-manager-tip-btn" type="button">知道了</button>
+              </aside>
+            </div>
+          </div>
+          <div class="field-grid template-manager-body" id="templateManagerBody">
             <label>模板
               <select id="templateSelect"></select>
             </label>
@@ -118,7 +128,7 @@
               </select>
             </label>
           </div>
-          <div class="row">
+          <div class="row template-manager-body">
             <button class="mini-btn" id="saveTemplateBtn">保存模板</button>
             <button class="mini-btn danger" id="deleteTemplateBtn">删除模板</button>
           </div>
@@ -389,7 +399,7 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=20260214m7"></script>
+  <script src="/static/app.js?v=20260215m6"></script>
 </body>
 </html>
 

@@ -29,9 +29,17 @@ const GUEST_DRAFT_STORAGE_KEY = "poster_guest_draft_v1";
 const GUEST_DRAFT_SCHEMA_VERSION = 1;
 const GUEST_DRAFT_EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
 const SETTINGS_TIP_SEEN_KEY = "poster_settings_tip_seen_v1";
+const TEMPLATE_MANAGER_TIP_SEEN_KEY = "poster_template_manager_tip_seen_v1";
 const PRICE_LINE_PATTERN = /^\s*【([^】]+)】\s*[：:]\s*(.+?)\s*$/;
 const PRICE_UNIT_DEFAULT = "元/吨";
 const DIALOG_EMPTY = () => {};
+const MOBILE_DOUBLE_TAP_INTERVAL_MS = 320;
+const MOBILE_DOUBLE_TAP_MAX_MOVE_PX = 24;
+let templateManagerTipHideTimer = 0;
+let templateManagerTipFadeTimer = 0;
+let mobilePreviewLastTapAt = 0;
+let mobilePreviewLastTapPos = null;
+let previewFocusToastTimer = 0;
 const RANGE_VALUE_FIELDS = [
   { inputId: "bgBlur", valueId: "bgBlurValue", format: (v) => `${Math.round(Number(v) || 0)}` },
   { inputId: "bgBrightness", valueId: "bgBrightnessValue", format: (v) => `${(Number(v) || 0).toFixed(2)}x` },
@@ -393,6 +401,86 @@ function syncTopbarCompactOnScroll() {
   }
 }
 
+function syncTemplateManagerCollapseUi() {
+  const card = $("templateManagerCard");
+  const toggleBtn = $("templateManagerToggleBtn");
+  const tip = $("templateManagerTip");
+  if (!card || !toggleBtn || !tip) return;
+  const bodyBlocks = card.querySelectorAll(".template-manager-body");
+  const mobile = isMobileLayout();
+  if (!mobile) {
+    clearTemplateManagerTipAutoHide();
+    card.classList.remove("is-collapsed");
+    toggleBtn.hidden = true;
+    toggleBtn.textContent = "收起";
+    toggleBtn.setAttribute("aria-expanded", "true");
+    bodyBlocks.forEach((el) => {
+      el.hidden = false;
+    });
+    tip.hidden = true;
+    return;
+  }
+  if (!card.dataset.mobileCollapseInited) {
+    card.classList.add("is-collapsed");
+    card.dataset.mobileCollapseInited = "1";
+  }
+  const collapsed = card.classList.contains("is-collapsed");
+  toggleBtn.hidden = false;
+  toggleBtn.textContent = collapsed ? "展开" : "收起";
+  toggleBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  bodyBlocks.forEach((el) => {
+    el.hidden = collapsed;
+  });
+  if (!collapsed || hasSeenTemplateManagerTip()) {
+    clearTemplateManagerTipAutoHide();
+    tip.hidden = true;
+    tip.classList.remove("is-fading");
+    return;
+  }
+  showTemplateManagerTipWithAutoHide(tip);
+}
+
+function clearTemplateManagerTipAutoHide() {
+  if (templateManagerTipHideTimer) {
+    window.clearTimeout(templateManagerTipHideTimer);
+    templateManagerTipHideTimer = 0;
+  }
+  if (templateManagerTipFadeTimer) {
+    window.clearTimeout(templateManagerTipFadeTimer);
+    templateManagerTipFadeTimer = 0;
+  }
+}
+
+function showTemplateManagerTipWithAutoHide(tip) {
+  if (!tip) return;
+  clearTemplateManagerTipAutoHide();
+  tip.hidden = false;
+  tip.classList.remove("is-fading");
+  templateManagerTipFadeTimer = window.setTimeout(() => {
+    tip.classList.add("is-fading");
+    templateManagerTipHideTimer = window.setTimeout(() => {
+      tip.hidden = true;
+      tip.classList.remove("is-fading");
+      templateManagerTipHideTimer = 0;
+    }, 220);
+    templateManagerTipFadeTimer = 0;
+  }, 8000);
+}
+
+function hasSeenTemplateManagerTip() {
+  try {
+    return localStorage.getItem(TEMPLATE_MANAGER_TIP_SEEN_KEY) === "1";
+  } catch (_) {
+    return true;
+  }
+}
+
+function markTemplateManagerTipSeen() {
+  try {
+    localStorage.setItem(TEMPLATE_MANAGER_TIP_SEEN_KEY, "1");
+  } catch (_) {}
+}
+
 function syncPreviewFocusUi() {
   const body = document.body;
   const focusBtn = $("togglePreviewFocusBtn");
@@ -441,6 +529,48 @@ async function togglePreviewFocus(force) {
   syncPreviewFocusUi();
   syncTopbarCompactOnScroll();
   syncFooterNoteVisibility();
+}
+
+async function onPreviewStageTouchEnd(e) {
+  if (!isMobileLayout()) return;
+  if (!e || e.changedTouches?.length !== 1) return;
+  if (e.touches?.length) return;
+  const touch = e.changedTouches[0];
+  const now = Date.now();
+  const currentPos = { x: touch.clientX, y: touch.clientY };
+  const withinTime = now - mobilePreviewLastTapAt <= MOBILE_DOUBLE_TAP_INTERVAL_MS;
+  const withinDistance = mobilePreviewLastTapPos
+    ? Math.hypot(currentPos.x - mobilePreviewLastTapPos.x, currentPos.y - mobilePreviewLastTapPos.y) <= MOBILE_DOUBLE_TAP_MAX_MOVE_PX
+    : false;
+
+  mobilePreviewLastTapAt = now;
+  mobilePreviewLastTapPos = currentPos;
+
+  if (!withinTime || !withinDistance) return;
+  mobilePreviewLastTapAt = 0;
+  mobilePreviewLastTapPos = null;
+  e.preventDefault();
+  await togglePreviewFocus();
+  showPreviewFocusToast(document.body.classList.contains("preview-focus") ? "已进入全屏预览" : "已退出全屏预览");
+}
+
+function showPreviewFocusToast(text) {
+  const toast = $("previewFocusToast");
+  if (!toast) return;
+  if (previewFocusToastTimer) {
+    window.clearTimeout(previewFocusToastTimer);
+    previewFocusToastTimer = 0;
+  }
+  toast.textContent = String(text || "").trim();
+  toast.hidden = false;
+  toast.classList.remove("is-visible");
+  void toast.offsetWidth;
+  toast.classList.add("is-visible");
+  previewFocusToastTimer = window.setTimeout(() => {
+    toast.classList.remove("is-visible");
+    toast.hidden = true;
+    previewFocusToastTimer = 0;
+  }, 840);
 }
 
 function hasSeenSettingsTip() {
@@ -1763,6 +1893,7 @@ async function init() {
       await togglePreviewFocus(false);
     }
     syncTopbarCompactOnScroll();
+    syncTemplateManagerCollapseUi();
     syncPreviewFocusUi();
   });
   window.addEventListener("scroll", syncFooterNoteVisibility, { passive: true });
@@ -1789,11 +1920,25 @@ async function init() {
     e.preventDefault();
     await togglePreviewFocus();
   });
+  $("previewStage").addEventListener("touchend", onPreviewStageTouchEnd, { passive: false });
   $("editorDrawerToggleBtn").addEventListener("click", () => {
     const body = document.body;
     if (!body.classList.contains("preview-focus")) return;
     body.classList.toggle("editor-drawer-open");
     syncPreviewFocusUi();
+  });
+  $("templateManagerToggleBtn").addEventListener("click", () => {
+    const card = $("templateManagerCard");
+    if (!card || !isMobileLayout()) return;
+    card.classList.toggle("is-collapsed");
+    syncTemplateManagerCollapseUi();
+  });
+  $("templateManagerTipAcknowledgeBtn").addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearTemplateManagerTipAutoHide();
+    markTemplateManagerTipSeen();
+    syncTemplateManagerCollapseUi();
   });
 
   document.addEventListener("keydown", (e) => {
@@ -2045,6 +2190,7 @@ async function init() {
   syncSettingsPaneHeight();
   syncFooterNoteVisibility();
   syncTopbarCompactOnScroll();
+  syncTemplateManagerCollapseUi();
   showSettingsFirstUseTip();
 }
 
