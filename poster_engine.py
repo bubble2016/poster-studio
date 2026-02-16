@@ -145,7 +145,6 @@ DEFAULT_CONFIG = {
     "card_style": "single",
     "theme_color": "#B22222",
     "price_color_mode": "semantic",
-    "copy_mode": "复制图片",
     "price_style": "amethyst",
     "last_content": "",
     "last_date": "",

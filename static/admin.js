@@ -172,8 +172,8 @@ function wireActions() {
     try {
       setStatus("请求导出数据中...");
       const data = await adminJson("/api/admin/export");
-      console.log("admin export", data);
-      setStatus("导出数据已打印到浏览器控制台", "ok");
+      void data;
+      setStatus("导出接口请求成功", "ok");
     } catch (e) {
       setStatus(e.message || "导出失败", "err");
     }

@@ -65,7 +65,7 @@ ADMIN_TOKEN = (os.environ.get("POSTER_ADMIN_TOKEN") or "").strip()
 ENV_NAME = str(os.environ.get("POSTER_ENV") or os.environ.get("FLASK_ENV") or "").strip().lower()
 IS_PRODUCTION = ENV_NAME in {"prod", "production"}
 DEV_AUTO_RELOAD = str(
-    os.environ.get("POSTER_DEV_RELOAD", "1" if not IS_PRODUCTION else "0")
+    os.environ.get("POSTER_DEV_RELOAD", "0")
 ).strip().lower() in {"1", "true", "yes", "on"}
 SESSION_COOKIE_SECURE = str(
     os.environ.get("POSTER_SESSION_COOKIE_SECURE", "1" if IS_PRODUCTION else "0")

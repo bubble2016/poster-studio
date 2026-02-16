@@ -29,7 +29,7 @@ const GUEST_DRAFT_STORAGE_KEY = "poster_guest_draft_v1";
 const GUEST_DRAFT_SCHEMA_VERSION = 1;
 const GUEST_DRAFT_EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
 const SETTINGS_TIP_SEEN_KEY = "poster_settings_tip_seen_v1";
-const TEMPLATE_MANAGER_TIP_SEEN_KEY = "poster_template_manager_tip_seen_v1";
+const TEMPLATE_MANAGER_TIP_SEEN_KEY = "poster_template_manager_tip_seen_v2";
 const PRICE_LINE_PATTERN = /^\s*【([^】]+)】\s*[：:]\s*(.+?)\s*$/;
 const PRICE_UNIT_DEFAULT = "元/吨";
 const DIALOG_EMPTY = () => {};
@@ -69,12 +69,6 @@ function toDayKey(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
-function isRelativeDateToken(value) {
-  const text = String(value || "").trim().toLowerCase();
-  if (!text) return false;
-  return new Set(["今天", "明天", "后天", "昨天", "0", "1", "2", "-1", "today", "tomorrow", "yesterday"]).has(text);
-}
-
 function normalizeDateInputForRollover(raw, baseDate = new Date()) {
   const text = String(raw || "").trim();
   if (!text) return { shouldRefresh: false, value: text };
@@ -112,7 +106,7 @@ async function checkDateRolloverAndRefresh() {
   await refreshPreview();
 }
 
-function normalizeDateInputOnLoad(raw) {
+function normalizeDateInputOnLoad() {
   return toTodayDateText();
 }
 
@@ -407,22 +401,9 @@ function syncTemplateManagerCollapseUi() {
   const tip = $("templateManagerTip");
   if (!card || !toggleBtn || !tip) return;
   const bodyBlocks = card.querySelectorAll(".template-manager-body");
-  const mobile = isMobileLayout();
-  if (!mobile) {
-    clearTemplateManagerTipAutoHide();
-    card.classList.remove("is-collapsed");
-    toggleBtn.hidden = true;
-    toggleBtn.textContent = "收起";
-    toggleBtn.setAttribute("aria-expanded", "true");
-    bodyBlocks.forEach((el) => {
-      el.hidden = false;
-    });
-    tip.hidden = true;
-    return;
-  }
-  if (!card.dataset.mobileCollapseInited) {
+  if (!card.dataset.collapseInited) {
     card.classList.add("is-collapsed");
-    card.dataset.mobileCollapseInited = "1";
+    card.dataset.collapseInited = "1";
   }
   const collapsed = card.classList.contains("is-collapsed");
   toggleBtn.hidden = false;
@@ -800,14 +781,13 @@ function formConfig() {
     watermark_text: $("watermarkText").value,
     watermark_opacity: Number($("watermarkOpacity").value),
     watermark_density: Number($("watermarkDensity").value),
-    copy_mode: $("copyMode").value,
     export_format: $("exportFormat").value,
   };
 }
 
 function bindFromConfig(cfg) {
   $("titleInput").value = cfg.last_title || "调价通知";
-  $("dateInput").value = normalizeDateInputOnLoad(cfg.last_date);
+  $("dateInput").value = normalizeDateInputOnLoad();
   $("contentInput").value = cfg.last_content || "";
   syncMainPriceEditorFromContent();
 
@@ -829,7 +809,6 @@ function bindFromConfig(cfg) {
   $("watermarkText").value = cfg.watermark_text || "仅供客户参考";
   $("watermarkOpacity").value = cfg.watermark_opacity ?? 0.15;
   $("watermarkDensity").value = cfg.watermark_density ?? 1.0;
-  $("copyMode").value = cfg.copy_mode || "复制图片";
   $("exportFormat").value = cfg.export_format || "PNG";
   syncUploadThumbsFromConfig(cfg);
   syncAllRangeValues();
@@ -1637,7 +1616,7 @@ async function init() {
     "shopName", "phone", "address", "slogan",
     "themeColor", "cardStyle", "bgBlur", "bgBrightness",
     "priceColorMode", "cardOpacity", "stampOpacity", "watermarkEnabled",
-    "watermarkText", "watermarkOpacity", "watermarkDensity", "copyMode", "exportFormat",
+    "watermarkText", "watermarkOpacity", "watermarkDensity", "exportFormat",
   ];
 
   watchIds.forEach((id) => {
@@ -1929,7 +1908,7 @@ async function init() {
   });
   $("templateManagerToggleBtn").addEventListener("click", () => {
     const card = $("templateManagerCard");
-    if (!card || !isMobileLayout()) return;
+    if (!card) return;
     card.classList.toggle("is-collapsed");
     syncTemplateManagerCollapseUi();
   });
@@ -2155,23 +2134,7 @@ async function init() {
 
     try {
       const d = await api("/api/generate", "POST", payload);
-      const mode = $("copyMode").value;
       const downloadUrl = toDownloadUrl(d.file);
-
-      if (mode.includes("文案")) {
-        await navigator.clipboard.writeText(d.copy_text);
-      }
-
-      if (mode.includes("图片")) {
-        const resp = await fetch(downloadUrl);
-        if (resp.ok) {
-          const blob = await resp.blob();
-          try {
-            await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-          } catch (_) {}
-        }
-      }
-
       window.open(downloadUrl, "_blank");
       $("statusText").textContent = withGuestHint(`已生成 ${d.name}`);
       if (state.isGuest && !state.guestRegisterTipShown) {
