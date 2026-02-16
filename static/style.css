@@ -661,6 +661,22 @@ select:focus-visible {
 .modal-panel-sm {
   max-height: 72vh;
 }
+#loginModal .modal-panel {
+  left: 12px;
+  right: 12px;
+  top: 8vh;
+  bottom: auto;
+  transform: none;
+  animation: none;
+  width: auto;
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
+  max-height: min(62vh, 520px);
+  border-radius: 16px;
+  border: 1px solid var(--stroke);
+  box-shadow: 0 16px 44px rgba(15, 23, 42, .2);
+}
 .modal-actions.modal-actions-3 {
   grid-template-columns: 1fr 1fr 1fr;
 }
@@ -1025,8 +1041,8 @@ body.is-desktop-preview-focus .editor-col {
 }
 .settings-tip {
   position: fixed;
-  top: calc(68px + env(safe-area-inset-top));
-  right: 12px;
+  top: 0;
+  left: 0;
   z-index: 180;
   max-width: min(250px, calc(100vw - 24px));
   font-size: .78rem;
@@ -1037,13 +1053,21 @@ body.is-desktop-preview-focus .editor-col {
   content: "";
   position: absolute;
   top: -6px;
-  right: 20px;
+  right: var(--tip-arrow-right, 20px);
   width: 12px;
   height: 12px;
   background: rgba(255, 255, 255, .78);
   border-left: 1px solid rgba(148, 163, 184, .38);
   border-top: 1px solid rgba(148, 163, 184, .38);
   transform: rotate(45deg);
+}
+.settings-tip[data-placement="top"]::before {
+  top: auto;
+  bottom: -6px;
+  border-left: none;
+  border-top: none;
+  border-right: 1px solid rgba(148, 163, 184, .38);
+  border-bottom: 1px solid rgba(148, 163, 184, .38);
 }
 .settings-tip p {
   margin: 0 0 8px;
@@ -1087,6 +1111,15 @@ body.is-desktop-preview-focus .editor-col {
   }
   .modal-panel-sm {
     max-width: 520px;
+  }
+  #loginModal .modal-panel {
+    left: 50%;
+    right: auto;
+    top: 50%;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+    width: min(520px, calc(100vw - 48px));
+    max-height: calc(100vh - 80px);
   }
   #settingsModal .modal-panel {
     left: auto;
@@ -1528,8 +1561,6 @@ body.is-desktop-preview-focus .editor-col {
     font-size: .72rem;
   }
   .settings-tip {
-    top: calc(62px + env(safe-area-inset-top));
-    right: 10px;
     max-width: min(220px, calc(100vw - 20px));
     font-size: .75rem;
   }
