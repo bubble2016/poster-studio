@@ -279,6 +279,21 @@ def _coerce_bool(value, default=False):
     return bool(value)
 
 
+def _coerce_request_bool(value, default=False):
+    if value is None:
+        return bool(default)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if not text:
+            return bool(default)
+        if text in {"1", "true", "yes", "on"}:
+            return True
+        if text in {"0", "false", "no", "off"}:
+            return False
+        return bool(default)
+    return bool(value)
+
+
 def _sanitize_runtime_cfg(raw_cfg):
     cfg = {**DEFAULT_CONFIG, **(raw_cfg or {})}
     cfg["bg_blur_radius"] = _coerce_int(cfg.get("bg_blur_radius"), DEFAULT_CONFIG["bg_blur_radius"], 0, 80)
@@ -872,7 +887,7 @@ def api_admin_backup():
     ok, msg = _is_admin_request()
     if not ok:
         return jsonify({"error": msg}), 403
-    include_outputs = str(request.args.get("include_outputs", "1")).strip().lower() not in {"0", "false", "no"}
+    include_outputs = _coerce_request_bool(request.args.get("include_outputs"), True)
     files = _collect_backup_files(include_outputs)
     snapshot = _export_all_data_snapshot()
     zip_buf = io.BytesIO()
@@ -942,7 +957,7 @@ def api_admin_delete_user(user_id):
     ok, msg = _is_admin_request()
     if not ok:
         return jsonify({"error": msg}), 403
-    include_outputs = str(request.args.get("include_outputs", "1")).strip().lower() not in {"0", "false", "no"}
+    include_outputs = _coerce_request_bool(request.args.get("include_outputs"), True)
     try:
         deleted = _admin_delete_user_data(user_id, include_outputs=include_outputs)
     except ValueError as e:
@@ -965,7 +980,7 @@ def api_admin_cleanup_guests():
         return jsonify({"error": "days 必须是数字"}), 400
     if days < 0 or days > 3650:
         return jsonify({"error": "days 范围应在 0-3650"}), 400
-    include_outputs = bool(data.get("include_outputs", False))
+    include_outputs = _coerce_request_bool(data.get("include_outputs"), False)
     now = time.time()
     cutoff = now - days * 86400
     removed = []

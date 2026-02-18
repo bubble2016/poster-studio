@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css?v=20260216m1" />
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 </head>
 <body>
   <div class="bg-orb orb-a"></div>
@@ -51,7 +52,20 @@
           </div>
         </div>
         <div id="previewStage" class="preview-stage is-loading">
-          <div id="previewPlaceholder" class="preview-placeholder">正在生成预览...</div>
+          <div id="previewPlaceholder" class="preview-placeholder">
+            <div class="skeleton-poster">
+              <div class="skeleton-logo"></div>
+              <div class="skeleton-title"></div>
+              <div class="skeleton-date"></div>
+              <div class="skeleton-line"></div>
+              <div class="skeleton-row"></div>
+              <div class="skeleton-row"></div>
+              <div class="skeleton-row"></div>
+              <div class="skeleton-row"></div>
+              <div class="skeleton-footer"></div>
+            </div>
+            <div class="preview-loading-text">正在生成预览...</div>
+          </div>
           <img id="previewImage" alt="海报预览" />
           <div id="previewFocusToast" class="preview-focus-toast" aria-live="polite" hidden></div>
         </div>
@@ -62,7 +76,16 @@
         <section class="card form-card">
           <div class="field-grid">
             <label>标题<input id="titleInput" /></label>
-            <label>日期<input id="dateInput" placeholder="今天 / 2026-02-11" /></label>
+            <label class="date-field">日期
+              <span class="date-input-wrap">
+                <input id="dateInput" type="date" />
+                <span class="date-input-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1.25A2.75 2.75 0 0 1 22 6.75v12.5A2.75 2.75 0 0 1 19.25 22H4.75A2.75 2.75 0 0 1 2 19.25V6.75A2.75 2.75 0 0 1 4.75 4H6V3a1 1 0 0 1 1-1Zm12.25 8H4v9.25c0 .41.34.75.75.75h14.5c.41 0 .75-.34.75-.75V10ZM4.75 6a.75.75 0 0 0-.75.75V8h16V6.75a.75.75 0 0 0-.75-.75h-1.5v1a1 1 0 1 1-2 0V6h-8v1a1 1 0 1 1-2 0V6h-1ZM7 12.75a1 1 0 1 1 0 2h1.5a1 1 0 1 1 0-2H7Zm4.25 0a1 1 0 1 1 0 2h1.5a1 1 0 1 1 0-2h-1.5Zm4.25 0a1 1 0 1 1 0 2H17a1 1 0 1 1 0-2h-1.5Z"/>
+                  </svg>
+                </span>
+              </span>
+            </label>
           </div>
           <div class="row">
             <button class="mini-btn" id="todayBtn">今天</button>
@@ -77,6 +100,7 @@
             <div class="price-editor-table-wrap">
               <table class="price-editor-table">
                 <colgroup>
+                  <col class="col-drag" />
                   <col class="col-name" />
                   <col class="col-mode" />
                   <col class="col-value" />
@@ -85,6 +109,7 @@
                 </colgroup>
                 <thead>
                   <tr>
+                    <th></th>
                     <th>品类</th>
                     <th>类型</th>
                     <th>值</th>
@@ -228,11 +253,15 @@
         <section id="settingsPaneMedia" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="media" hidden>
           <div class="section-head"><h2>图片素材</h2></div>
           <p>访客模式默认不显示 Logo。你可以在这里直接上传自己的包站 Logo、印章和二维码。</p>
-          <label>背景预设
-            <select id="presetSelect">
-              <option value="">不使用预设</option>
-            </select>
-          </label>
+          <div class="field-group">
+            <label>背景预设</label>
+            <div id="presetGrid" class="preset-grid">
+              <div class="preset-item is-active" data-path="">
+                <div class="preset-thumb-none">无</div>
+                <span class="preset-name">不使用</span>
+              </div>
+            </div>
+          </div>
           <div class="field-grid media-grid">
             <label class="upload-field">背景图
               <input id="bgUpload" type="file" accept="image/*" />

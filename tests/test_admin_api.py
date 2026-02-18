@@ -112,3 +112,25 @@ def test_admin_delete_user_and_cleanup_guests(app_module, monkeypatch):
     payload = cleanup_resp.get_json()
     assert payload["removed_count"] >= 1
     assert "guest_old" in payload["removed_user_ids"]
+
+
+def test_admin_cleanup_guests_accepts_string_false_for_include_outputs(app_module, monkeypatch):
+    token = "admin-secret"
+    monkeypatch.setenv("POSTER_ADMIN_TOKEN", token)
+
+    app_module.save_config(app_module._get_user_config_path("guest_old"), {"shop_name": "G"})
+    out_file = Path(app_module.OUTPUT_DIR) / "guest_old" / "demo.png"
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    out_file.write_bytes(b"fake-image")
+    app_module._record_output_owner(app_module._public_path(str(out_file)), "guest_old")
+
+    client = app_module.app.test_client()
+    cleanup_resp = client.post(
+        "/api/admin/guests/cleanup",
+        headers=_auth_headers(token),
+        json={"days": 0, "include_outputs": "false"},
+    )
+    assert cleanup_resp.status_code == 200
+    payload = cleanup_resp.get_json()
+    assert "guest_old" in payload["removed_user_ids"]
+    assert out_file.exists()

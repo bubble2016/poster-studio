@@ -270,45 +270,6 @@ class PresetGenerator:
         return ImageChops.blend(img, noise, 0.15)
 
     @staticmethod
-    def gen_mountain_morning():
-        w, h = CANVAS_SIZE
-        sky_top = (218, 238, 255)
-        sky_bottom = (240, 249, 255)
-        img = Image.new("RGB", (w, h), sky_top)
-        draw = ImageDraw.Draw(img)
-        for y in range(h):
-            t = y / max(1, h - 1)
-            r = int(sky_top[0] + (sky_bottom[0] - sky_top[0]) * t)
-            g = int(sky_top[1] + (sky_bottom[1] - sky_top[1]) * t)
-            b = int(sky_top[2] + (sky_bottom[2] - sky_top[2]) * t)
-            draw.line([(0, y), (w, y)], fill=(r, g, b))
-
-        mist = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        md = ImageDraw.Draw(mist)
-        layers = [
-            (h * 0.56, (162, 188, 214, 120), 220),
-            (h * 0.67, (141, 172, 199, 140), 260),
-            (h * 0.78, (122, 155, 184, 155), 320),
-        ]
-        for y_base, color, amp in layers:
-            points = [(0, int(y_base))]
-            for x in range(0, w + 120, 120):
-                y = int(y_base + random.randint(-amp // 12, amp // 12))
-                points.append((x, y))
-            points += [(w, h), (0, h)]
-            md.polygon(points, fill=color)
-
-        for _ in range(12):
-            x = random.randint(-60, w + 60)
-            y = random.randint(int(h * 0.18), int(h * 0.68))
-            r = random.randint(120, 240)
-            md.ellipse((x - r, y - r // 2, x + r, y + r // 2), fill=(255, 255, 255, random.randint(22, 45)))
-
-        mist = mist.filter(ImageFilter.GaussianBlur(18))
-        img = Image.alpha_composite(img.convert("RGBA"), mist).convert("RGB")
-        return PresetGenerator._add_noise(img, 0.03)
-
-    @staticmethod
     def gen_aurora_cyan():
         w, h = CANVAS_SIZE
         blobs = [
@@ -438,7 +399,6 @@ class PresetGenerator:
             ("preset_neon_city.png", "霓虹赛博夜", PresetGenerator.gen_neon_city),
             ("preset_sunset_amber.png", "落日琥珀橙", PresetGenerator.gen_sunset_amber),
             ("preset_noir_depth.png", "深空曜黑", PresetGenerator.gen_noir_depth),
-            ("preset_mountain_morning.png", "山岚晨光", PresetGenerator.gen_mountain_morning),
             ("preset_aurora_cyan.png", "极光青域", PresetGenerator.gen_aurora_cyan),
         ]
         out = {}

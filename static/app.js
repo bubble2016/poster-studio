@@ -35,6 +35,7 @@ const PRICE_UNIT_DEFAULT = "元/吨";
 const DIALOG_EMPTY = () => {};
 const MOBILE_DOUBLE_TAP_INTERVAL_MS = 320;
 const MOBILE_DOUBLE_TAP_MAX_MOVE_PX = 24;
+const PRICE_SORT_TOUCH_DELAY_MS = 140;
 let templateManagerTipHideTimer = 0;
 let templateManagerTipFadeTimer = 0;
 let mobilePreviewLastTapAt = 0;
@@ -50,16 +51,13 @@ const RANGE_VALUE_FIELDS = [
 ];
 
 function toTodayDateText() {
-  return toDateTextByOffset(0);
+  return toDayKey(new Date());
 }
 
 function toDateTextByOffset(offsetDays = 0, baseDate = new Date()) {
   const date = new Date(baseDate.getTime());
   date.setDate(date.getDate() + Number(offsetDays || 0));
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}年${m}月${d}日`;
+  return toDayKey(date);
 }
 
 function toDayKey(date = new Date()) {
@@ -72,11 +70,7 @@ function toDayKey(date = new Date()) {
 function normalizeDateInputForRollover(raw, baseDate = new Date()) {
   const text = String(raw || "").trim();
   if (!text) return { shouldRefresh: false, value: text };
-  const lower = text.toLowerCase();
-  if (lower === "今天" || lower === "0" || lower === "today") return { shouldRefresh: true, value: toDateTextByOffset(1, baseDate) };
-  if (lower === "明天" || lower === "1" || lower === "tomorrow") return { shouldRefresh: true, value: toDateTextByOffset(2, baseDate) };
-  if (lower === "后天" || lower === "2") return { shouldRefresh: true, value: toDateTextByOffset(3, baseDate) };
-  if (lower === "昨天" || lower === "-1" || lower === "yesterday") return { shouldRefresh: true, value: toDateTextByOffset(0, baseDate) };
+  
   if (text === toDateTextByOffset(-1, baseDate)) return { shouldRefresh: true, value: toDateTextByOffset(0, baseDate) };
   if (text === toDateTextByOffset(0, baseDate)) return { shouldRefresh: true, value: toDateTextByOffset(1, baseDate) };
   if (text === toDateTextByOffset(1, baseDate)) return { shouldRefresh: true, value: toDateTextByOffset(2, baseDate) };
@@ -188,13 +182,19 @@ function openDialog(options = {}) {
   const mode = options.mode || "alert";
   dialogState.mode = mode;
   title.textContent = options.title || "提示";
-  message.textContent = options.message || "";
+  if (options.messageHtml) {
+    message.innerHTML = options.messageHtml;
+  } else {
+    message.textContent = options.message || "";
+  }
   confirmBtn.textContent = options.confirmText || "确定";
   cancelBtn.textContent = options.cancelText || "取消";
   cancelBtn.hidden = mode === "alert";
   inputWrap.hidden = mode !== "prompt";
+  inputWrap.style.display = mode === "prompt" ? "" : "none";
   input.value = options.defaultValue || "";
   input.placeholder = options.placeholder || "";
+  modal.classList.toggle("is-prompt", mode === "prompt");
 
   modal.classList.remove("hidden");
   document.body.classList.add("no-scroll");
@@ -214,6 +214,7 @@ function closeDialog(result = null) {
   const modal = $("dialogModal");
   if (!modal || modal.classList.contains("hidden")) return;
   modal.classList.add("hidden");
+  modal.classList.remove("is-prompt");
   if (!hasAnyModalOpen()) {
     document.body.classList.remove("no-scroll");
   }
@@ -240,6 +241,31 @@ async function appPrompt(message, defaultValue = "", title = "请输入", placeh
 function showStatusError(msg) {
   $("statusText").textContent = msg || "操作失败，请重试";
 }
+
+function showToast(message, duration = 3000) {
+  let container = $("toastContainer");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "toastContainer";
+    container.className = "toast-container";
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add("is-fading");
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
+
+function vibrate(pattern = 10) {
+  if (typeof navigator !== "undefined" && navigator.vibrate) {
+    try { navigator.vibrate(pattern); } catch (_) {}
+  }
+}
+
 function syncSettingsMenuUi() {
   const userEl = $("settingsMenuUser");
   const authBtn = $("settingsMenuAuthBtn");
@@ -318,13 +344,20 @@ function withGuestHint(baseText) {
 
 function syncFooterNoteVisibility() {
   const note = $("actionBarNote");
+  const bar = document.querySelector(".editor-col .action-bar");
+  const isPreviewFocus = document.body.classList.contains("preview-focus");
   if (!note) return;
-  if (document.body.classList.contains("preview-focus")) {
+  if (isPreviewFocus) {
     note.classList.remove("is-visible");
+    if (bar) bar.classList.remove("is-dock-visible");
     return;
   }
   const doc = document.documentElement;
   const remain = Math.max(0, doc.scrollHeight - (window.scrollY + window.innerHeight));
+  const showDock = !isMobileLayout() && remain <= 160;
+  if (bar) {
+    bar.classList.toggle("is-dock-visible", showDock);
+  }
   note.classList.toggle("is-visible", remain <= 24);
 }
 
@@ -588,6 +621,38 @@ function showSettingsFirstUseTip() {
 
   let closed = false;
   let autoCloseTimer = 0;
+  let tipPlaceRaf = 0;
+
+  const placeTip = () => {
+    if (closed) return;
+    const btnRect = btn.getBoundingClientRect();
+    const tipRect = tip.getBoundingClientRect();
+    const viewportW = document.documentElement.clientWidth;
+    const viewportH = window.innerHeight || document.documentElement.clientHeight;
+    const gap = 10;
+    const edgeGap = 8;
+
+    let top = btnRect.bottom + gap;
+    if (top + tipRect.height > viewportH - edgeGap) {
+      top = Math.max(edgeGap, btnRect.top - tipRect.height - gap);
+      tip.dataset.placement = "top";
+    } else {
+      tip.dataset.placement = "bottom";
+    }
+
+    let left = btnRect.right - tipRect.width;
+    left = Math.min(Math.max(edgeGap, left), Math.max(edgeGap, viewportW - tipRect.width - edgeGap));
+
+    const arrowRight = Math.min(Math.max(14, btnRect.right - left - 22), Math.max(14, tipRect.width - 24));
+    tip.style.top = `${Math.round(top)}px`;
+    tip.style.left = `${Math.round(left)}px`;
+    tip.style.setProperty("--tip-arrow-right", `${Math.round(arrowRight)}px`);
+  };
+
+  const schedulePlaceTip = () => {
+    if (tipPlaceRaf) cancelAnimationFrame(tipPlaceRaf);
+    tipPlaceRaf = requestAnimationFrame(placeTip);
+  };
 
   const closeTip = () => {
     if (closed) return;
@@ -595,6 +660,16 @@ function showSettingsFirstUseTip() {
     if (autoCloseTimer) {
       clearTimeout(autoCloseTimer);
       autoCloseTimer = 0;
+    }
+    if (tipPlaceRaf) {
+      cancelAnimationFrame(tipPlaceRaf);
+      tipPlaceRaf = 0;
+    }
+    window.removeEventListener("scroll", schedulePlaceTip);
+    window.removeEventListener("resize", schedulePlaceTip);
+    if (window.visualViewport) {
+      window.visualViewport.removeEventListener("scroll", schedulePlaceTip);
+      window.visualViewport.removeEventListener("resize", schedulePlaceTip);
     }
     document.removeEventListener("click", onDocClick, true);
     tip.remove();
@@ -612,7 +687,15 @@ function showSettingsFirstUseTip() {
   });
 
   btn.addEventListener("click", closeTip, { once: true });
+  window.addEventListener("scroll", schedulePlaceTip, { passive: true });
+  window.addEventListener("resize", schedulePlaceTip);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("scroll", schedulePlaceTip);
+    window.visualViewport.addEventListener("resize", schedulePlaceTip);
+  }
+  schedulePlaceTip();
   setTimeout(() => {
+    schedulePlaceTip();
     document.addEventListener("click", onDocClick, true);
   }, 0);
 
@@ -705,8 +788,56 @@ function switchSettingsTab(tab) {
 
   document.querySelectorAll("[data-settings-pane]").forEach((pane) => {
     const active = pane.dataset.settingsPane === tab;
-    pane.classList.toggle("is-active", active);
-    pane.hidden = !active;
+    if (active) {
+      pane.style.display = "block";
+      void pane.offsetWidth; // trigger reflow
+      pane.classList.add("is-active");
+    } else {
+      pane.classList.remove("is-active");
+      setTimeout(() => {
+        if (!pane.classList.contains("is-active")) {
+          pane.style.display = "none";
+        }
+      }, 280);
+    }
+  });
+}
+
+function renderPresetGrid() {
+  const grid = $("presetGrid");
+  if (!grid) return;
+  
+  const currentPath = state.config.bg_image_path || "";
+  const isPresetMode = state.config.bg_mode === "preset";
+
+  grid.innerHTML = `
+    <div class="preset-item ${(!isPresetMode || !currentPath) ? "is-active" : ""}" data-path="">
+      <div class="preset-thumb-none">无</div>
+      <span class="preset-name">不使用</span>
+    </div>
+  ` + state.presets.map(p => `
+    <div class="preset-item ${isPresetMode && currentPath === p.path ? "is-active" : ""}" data-path="${escapeAttr(p.path)}">
+      <img class="preset-thumb" src="${toAssetUrl(p.path)}" loading="lazy">
+      <span class="preset-name">${escapeAttr(p.name)}</span>
+    </div>
+  `).join("");
+
+  grid.querySelectorAll(".preset-item").forEach(item => {
+    item.onclick = async () => {
+      const path = item.dataset.path;
+      grid.querySelectorAll(".preset-item").forEach(el => el.classList.toggle("is-active", el === item));
+      
+      if (!path) {
+        state.config.bg_mode = "custom";
+        state.config.bg_image_path = "";
+      } else {
+        state.config.bg_mode = "preset";
+        state.config.bg_image_path = path;
+      }
+      
+      saveGuestDraft();
+      await refreshPreview();
+    };
   });
 }
 
@@ -978,27 +1109,35 @@ function parseContentToPriceEditor(content) {
   };
 }
 
-function getPriceEditorRowsFromDom() {
-  if (isMobileLayout()) {
-    return state.priceEditorRows.map((row) => ({ ...row }));
-  }
+function syncDesktopPriceInputsToState() {
+  if (isMobileLayout()) return;
   const tbody = $("priceTableBody");
-  if (!tbody) return [];
-  const rows = [];
-
-  tbody.querySelectorAll("tr").forEach((tr) => {
-    rows.push({
-      name: tr.querySelector('[data-field="name"]')?.value?.trim() || "",
-      mode: tr.querySelector('[data-field="mode"]')?.value || "number",
-      value: tr.querySelector('[data-field="value"]')?.value?.trim() || "",
-      min: tr.querySelector('[data-field="min"]')?.value?.trim() || "",
-      max: tr.querySelector('[data-field="max"]')?.value?.trim() || "",
-      text: tr.querySelector('[data-field="text"]')?.value?.trim() || "",
-      unit: tr.querySelector('[data-field="unit"]')?.value?.trim() || "",
-    });
+  if (!tbody) return;
+  tbody.querySelectorAll("tr[data-row-index]").forEach((tr) => {
+    const idx = parseInt(tr.dataset.rowIndex);
+    if (isNaN(idx)) return;
+    const row = state.priceEditorRows[idx];
+    if (!row) return;
+    row.name = tr.querySelector('[data-field="name"]')?.value?.trim() || "";
+    row.mode = tr.querySelector('[data-field="mode"]')?.value || "number";
+    row.value = tr.querySelector('[data-field="value"]')?.value?.trim() || "";
+    row.min = tr.querySelector('[data-field="min"]')?.value?.trim() || "";
+    row.max = tr.querySelector('[data-field="max"]')?.value?.trim() || "";
+    row.text = tr.querySelector('[data-field="text"]')?.value?.trim() || "";
+    row.unit = tr.querySelector('[data-field="unit"]')?.value?.trim() || "";
   });
+}
 
-  return rows;
+function getPriceEditorRowsFromDom() {
+  syncDesktopPriceInputsToState();
+  return state.priceEditorRows.map(r => ({ ...r }));
+}
+
+function reorderPriceRows(oldIndex, newIndex) {
+  if (oldIndex === newIndex) return;
+  const list = state.priceEditorRows;
+  const [movedItem] = list.splice(oldIndex, 1);
+  list.splice(newIndex, 0, movedItem);
 }
 
 function buildContentFromPriceEditor(rows, extra) {
@@ -1175,6 +1314,63 @@ function savePriceRowFromDrawer() {
   return true;
 }
 
+function getPriceRowConfirmName(row) {
+  const name = (row?.name || "").trim();
+  return name || "未命名纸种";
+}
+
+async function confirmDeletePriceRowByIndex(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= state.priceEditorRows.length) return false;
+  const rowName = getPriceRowConfirmName(state.priceEditorRows[index]);
+  const ret = await openDialog({
+    mode: "confirm",
+    title: "删除确认",
+    messageHtml: `将删除纸种：<span class="dialog-danger-text">${escapeAttr(rowName)}</span><br>此操作不可撤销。`,
+    confirmText: "确认",
+    cancelText: "取消",
+  });
+  return ret === true;
+}
+
+function bindPinchZoom() {
+  const stage = $("previewStage");
+  const img = $("previewImage");
+  if (!stage || !img) return;
+
+  let initialDist = 0;
+  let currentScale = 1;
+  let startScale = 1;
+
+  stage.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 2) {
+      initialDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+      startScale = currentScale;
+    }
+  }, { passive: true });
+
+  stage.addEventListener("touchmove", (e) => {
+    if (e.touches.length === 2 && initialDist > 0) {
+      const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+      currentScale = Math.min(Math.max(1, startScale * (dist / initialDist)), 4);
+      img.style.transform = `scale(${currentScale})`;
+      if (currentScale > 1.05) {
+        document.body.classList.add("no-scroll");
+      }
+    }
+  }, { passive: true });
+
+  stage.addEventListener("touchend", (e) => {
+    if (e.touches.length < 2) {
+      initialDist = 0;
+      if (currentScale <= 1.05) {
+        currentScale = 1;
+        img.style.transform = "scale(1)";
+        if (!hasAnyModalOpen()) document.body.classList.remove("no-scroll");
+      }
+    }
+  }, { passive: true });
+}
+
 function renderPriceEditorTable() {
   const tbody = $("priceTableBody");
   if (!tbody) return;
@@ -1183,12 +1379,21 @@ function renderPriceEditorTable() {
   if (isMobileLayout()) {
     tbody.innerHTML = state.priceEditorRows.map((row, idx) => `
       <tr data-row-index="${idx}" class="price-row-summary" tabindex="0">
+        <td class="price-summary-drag price-sort-handle" aria-hidden="true" title="拖动排序">
+          <svg class="drag-handle" viewBox="0 0 24 24">
+            <path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+          </svg>
+        </td>
         <td class="price-summary-main">
           <span class="price-summary-name">${escapeAttr(row.name || "未命名纸种")}</span>
           <span class="price-summary-meta">${escapeAttr(getPriceRowDisplayText(row))}</span>
         </td>
         <td class="price-summary-actions">
-          <button class="price-row-open" data-action="open-row" type="button" aria-label="编辑此行">编辑</button>
+          <button class="price-row-open" data-action="open-row" type="button" aria-label="编辑此行" title="编辑此行">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 17.25V21h3.75L17.8 9.95l-3.75-3.75L3 17.25zm17.7-10.2a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+            </svg>
+          </button>
           <button class="price-row-remove" data-action="remove-row" type="button" aria-label="删除此行" title="删除此行">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M9 3.75A2.25 2.25 0 0 0 6.75 6H4.5a1 1 0 1 0 0 2h.38l1.03 10.34A2.25 2.25 0 0 0 8.15 20.5h7.7a2.25 2.25 0 0 0 2.24-2.16L19.12 8h.38a1 1 0 1 0 0-2h-2.25A2.25 2.25 0 0 0 15 3.75H9Zm0 2h6a.25.25 0 0 1 .25.25V6h-6.5v-.25A.25.25 0 0 1 9 5.75Zm.25 5a1 1 0 0 1 1 1v4.5a1 1 0 1 1-2 0v-4.5a1 1 0 0 1 1-1Zm5.5 0a1 1 0 0 1 1 1v4.5a1 1 0 1 1-2 0v-4.5a1 1 0 0 1 1-1Z"/>
@@ -1215,7 +1420,12 @@ function renderPriceEditorTable() {
       valueCellHtml = `<input data-field="text" value="${escapeAttr(row.text || "")}" placeholder="说明" />`;
     }
     return `
-      <tr data-row-index="${idx}">
+      <tr data-row-index="${idx}" class="price-row-summary">
+        <td class="price-cell price-cell-drag price-sort-handle" aria-hidden="true" title="拖动排序">
+          <svg class="drag-handle" viewBox="0 0 24 24">
+            <path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+          </svg>
+        </td>
         <td class="price-cell price-cell-name" data-label="品类"><input data-field="name" value="${escapeAttr(row.name || "")}" placeholder="纸种" /></td>
         <td class="price-cell price-cell-mode" data-label="类型">
           <select data-field="mode">
@@ -1300,7 +1510,7 @@ function applyHolidayPresetIfNeeded(templateName) {
     if (state.holidayBgApplied && state.holidayBgBackup) {
       state.config.bg_mode = state.holidayBgBackup.bg_mode || "custom";
       state.config.bg_image_path = state.holidayBgBackup.bg_image_path || "";
-      $("presetSelect").value = state.config.bg_mode === "preset" ? (state.config.bg_image_path || "") : "";
+      renderPresetGrid();
     }
     state.holidayBgApplied = false;
     state.holidayBgBackup = null;
@@ -1314,9 +1524,9 @@ function applyHolidayPresetIfNeeded(templateName) {
       bg_image_path: state.config.bg_image_path,
     };
   }
-  $("presetSelect").value = holidayPath;
   state.config.bg_mode = "preset";
   state.config.bg_image_path = holidayPath;
+  renderPresetGrid();
   state.holidayBgApplied = true;
 }
 
@@ -1472,7 +1682,8 @@ function openLogoCropModal(file) {
 function setPreviewLoading(text = "正在生成预览...") {
   $("previewStage").classList.remove("is-loaded");
   $("previewStage").classList.add("is-loading");
-  $("previewPlaceholder").textContent = text;
+  const textEl = document.querySelector(".preview-loading-text");
+  if (textEl) textEl.textContent = text;
 }
 
 function setPreviewLoaded() {
@@ -1563,6 +1774,7 @@ async function init() {
   syncPreviewFocusUi();
   await ensureLogin();
   bindLogoCropDrag();
+  bindPinchZoom();
   setPreviewLoading("正在生成预览...");
 
   const data = await api("/api/init");
@@ -1574,7 +1786,51 @@ async function init() {
   state.presets = data.presets || [];
 
   bindFromConfig(state.config);
+  renderPresetGrid();
   state.lastDateCheckKey = toDayKey();
+
+  const priceTableBody = $("priceTableBody");
+  if (priceTableBody && typeof Sortable !== "undefined") {
+    Sortable.create(priceTableBody, {
+      animation: 200,
+      handle: ".price-sort-handle",
+      draggable: ".price-row-summary", // Explicitly target the <tr> for both views
+      ghostClass: "sortable-ghost",
+      chosenClass: "sortable-chosen",
+      dragClass: "sortable-drag",
+      forceFallback: false,
+      fallbackTolerance: 2,
+      touchStartThreshold: 2,
+      delay: PRICE_SORT_TOUCH_DELAY_MS,
+      delayOnTouchOnly: true,
+      onStart: () => { vibrate(15); },
+      onEnd: (evt) => {
+        const oldIndex = evt.oldIndex;
+        const newIndex = evt.newIndex;
+        if (oldIndex === newIndex || oldIndex === undefined || newIndex === undefined) return;
+
+        // 1. If desktop, sync all current input values to state.priceEditorRows FIRST
+        if (!isMobileLayout()) {
+          syncDesktopPriceInputsToState();
+        }
+        
+        // 2. Perform the array move on the state object
+        const [movedItem] = state.priceEditorRows.splice(oldIndex, 1);
+        state.priceEditorRows.splice(newIndex, 0, movedItem);
+        
+        // 3. Immediately update hidden content (the source of truth for stats/preview)
+        $("contentInput").value = buildContentFromPriceEditor(state.priceEditorRows, $("priceEditorExtra").value);
+        
+        // 4. Force a clean re-render to ensure DOM data-row-index is perfectly in sync
+        renderPriceEditorTable();
+        
+        // 5. Update stats and refresh preview
+        updateStats();
+        onType();
+        saveGuestDraft();
+      },
+    });
+  }
 
   document.querySelectorAll(".theme-swatch").forEach((btn) => {
     if (btn.dataset.color) btn.style.background = btn.dataset.color;
@@ -1601,9 +1857,6 @@ async function init() {
     applyTemplateByName(tplSel.value);
     updateStats();
   }
-
-  const presetSel = $("presetSelect");
-  state.presets.forEach((p) => presetSel.add(new Option(p.name, p.path)));
 
   const onType = debounce(async () => {
     updateStats();
@@ -1719,9 +1972,11 @@ async function init() {
     closePriceRowDrawer();
     onType();
   });
-  $("deletePriceDrawerBtn").addEventListener("click", () => {
+  $("deletePriceDrawerBtn").addEventListener("click", async () => {
     const idx = state.editingPriceRowIndex;
     if (!Number.isInteger(idx) || idx < 0 || idx >= state.priceEditorRows.length) return;
+    const ok = await confirmDeletePriceRowByIndex(idx);
+    if (!ok) return;
     state.priceEditorRows.splice(idx, 1);
     if (!state.priceEditorRows.length) state.priceEditorRows = [createPriceRow()];
     renderPriceEditorTable();
@@ -1730,7 +1985,7 @@ async function init() {
     closePriceRowDrawer();
     onType();
   });
-  $("priceTableBody").addEventListener("click", (e) => {
+  $("priceTableBody").addEventListener("click", async (e) => {
     const tr = e.target.closest("tr");
     if (!tr) return;
     const idx = Number(tr.dataset.rowIndex);
@@ -1739,6 +1994,9 @@ async function init() {
     const btn = e.target.closest('[data-action="remove-row"]');
     if (btn) {
       state.priceEditorRows = getPriceEditorRowsFromDom();
+      const ok = await confirmDeletePriceRowByIndex(idx);
+      if (!ok) return;
+      vibrate(15);
       state.priceEditorRows.splice(idx, 1);
       if (!state.priceEditorRows.length) state.priceEditorRows = [createPriceRow()];
       renderPriceEditorTable();
@@ -1748,6 +2006,8 @@ async function init() {
     }
 
     if (isMobileLayout()) {
+      const isDragging = e.target.closest(".price-sort-handle");
+      if (isDragging) return;
       openPriceRowDrawer(idx);
     }
   });
@@ -1966,21 +2226,6 @@ async function init() {
     }
   });
 
-  $("presetSelect").addEventListener("change", async (e) => {
-    try {
-      const path = e.target.value;
-      if (path) {
-        state.config.bg_mode = "preset";
-        state.config.bg_image_path = path;
-      }
-      renderUploadThumb("bg_image_path", state.config.bg_image_path || "");
-      saveGuestDraft();
-      await refreshPreview();
-    } catch (e2) {
-      showStatusError(e2.message || "背景切换失败");
-    }
-  });
-
   $("todayBtn").addEventListener("click", async () => {
     $("dateInput").value = toDateTextByOffset(0);
     saveGuestDraft();
@@ -2080,6 +2325,8 @@ async function init() {
       saveGuestDraft();
       const d = await api("/api/config", "POST", state.config);
       state.config = d.config;
+      showToast("设置已保存");
+      renderPresetGrid();
       $("statusText").textContent = withGuestHint("设置已保存");
       closeSettingsModal();
       await refreshPreview();
@@ -2123,6 +2370,7 @@ async function init() {
 
   $("generateBtn").addEventListener("click", async () => {
     const btn = $("generateBtn");
+    vibrate(10);
     setButtonBusy(btn, true, "生成中...");
     const payload = {
       title: $("titleInput").value.trim(),
@@ -2136,6 +2384,7 @@ async function init() {
       const d = await api("/api/generate", "POST", payload);
       const downloadUrl = toDownloadUrl(d.file);
       window.open(downloadUrl, "_blank");
+      vibrate(30);
       $("statusText").textContent = withGuestHint(`已生成 ${d.name}`);
       if (state.isGuest && !state.guestRegisterTipShown) {
         state.guestRegisterTipShown = true;
