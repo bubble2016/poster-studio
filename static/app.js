@@ -17,10 +17,10 @@
 
 const $ = (id) => document.getElementById(id);
 const UPLOAD_PREVIEW_FIELDS = [
-  { key: "bg_image_path", thumbId: "bgThumb", wrapId: "bgThumbWrap" },
-  { key: "logo_image_path", thumbId: "logoThumb", wrapId: "logoThumbWrap" },
-  { key: "stamp_image_path", thumbId: "stampThumb", wrapId: "stampThumbWrap" },
-  { key: "qrcode_image_path", thumbId: "qrThumb", wrapId: "qrThumbWrap" },
+  { key: "bg_image_path", thumbId: "bgThumb", wrapId: "bgThumbWrap", removeBtnId: "bgThumbRemoveBtn", uploadInputId: "bgUpload", label: "背景图" },
+  { key: "logo_image_path", thumbId: "logoThumb", wrapId: "logoThumbWrap", removeBtnId: "logoThumbRemoveBtn", uploadInputId: "logoUpload", label: "Logo" },
+  { key: "stamp_image_path", thumbId: "stampThumb", wrapId: "stampThumbWrap", removeBtnId: "stampThumbRemoveBtn", uploadInputId: "stampUpload", label: "印章" },
+  { key: "qrcode_image_path", thumbId: "qrThumb", wrapId: "qrThumbWrap", removeBtnId: "qrThumbRemoveBtn", uploadInputId: "qrUpload", label: "二维码" },
 ];
 const AVAILABLE_CARD_STYLES = new Set(["single", "stack", "block", "flip", "ticket", "double", "aurora", "paper_relief"]);
 const BG_VARIANTS = ["bg-variant-a", "bg-variant-b", "bg-variant-c", "bg-variant-d", "bg-variant-e"];
@@ -41,6 +41,16 @@ let templateManagerTipFadeTimer = 0;
 let mobilePreviewLastTapAt = 0;
 let mobilePreviewLastTapPos = null;
 let previewFocusToastTimer = 0;
+let activeSettingsTab = "base";
+let settingsTabsLastScrollTop = 0;
+let settingsTabsAutoHidden = false;
+let settingsTabsScrollDownAcc = 0;
+let settingsTabsScrollUpAcc = 0;
+let settingsTabsToggleLockUntil = 0;
+const SETTINGS_TABS_MIN_DELTA = 2;
+const SETTINGS_TABS_HIDE_SCROLL_PX = 56;
+const SETTINGS_TABS_SHOW_SCROLL_PX = 36;
+const SETTINGS_TABS_TOGGLE_LOCK_MS = 140;
 const RANGE_VALUE_FIELDS = [
   { inputId: "bgBlur", valueId: "bgBlurValue", format: (v) => `${Math.round(Number(v) || 0)}` },
   { inputId: "bgBrightness", valueId: "bgBrightnessValue", format: (v) => `${(Number(v) || 0).toFixed(2)}x` },
@@ -780,6 +790,9 @@ async function ensureLogin() {
 }
 
 function switchSettingsTab(tab) {
+  const settingsBody = document.querySelector("#settingsModal .modal-body");
+  activeSettingsTab = tab;
+
   document.querySelectorAll("[data-settings-tab]").forEach((btn) => {
     const active = btn.dataset.settingsTab === tab;
     btn.classList.toggle("is-active", active);
@@ -789,18 +802,76 @@ function switchSettingsTab(tab) {
   document.querySelectorAll("[data-settings-pane]").forEach((pane) => {
     const active = pane.dataset.settingsPane === tab;
     if (active) {
+      pane.hidden = false;
       pane.style.display = "block";
       void pane.offsetWidth; // trigger reflow
       pane.classList.add("is-active");
     } else {
       pane.classList.remove("is-active");
-      setTimeout(() => {
-        if (!pane.classList.contains("is-active")) {
-          pane.style.display = "none";
-        }
-      }, 280);
+      pane.style.display = "none";
+      pane.hidden = true;
     }
   });
+
+  if (settingsBody) {
+    settingsBody.scrollTop = 0;
+    settingsTabsLastScrollTop = 0;
+  }
+  setSettingsTabsAutoHidden(false);
+}
+
+function setSettingsTabsAutoHidden(hidden) {
+  const tabs = document.querySelector("#settingsModal .settings-tabs");
+  if (!tabs) return;
+  settingsTabsAutoHidden = !!hidden;
+  tabs.classList.toggle("is-auto-hidden", settingsTabsAutoHidden);
+}
+
+function handleSettingsBodyScroll() {
+  const settingsBody = document.querySelector("#settingsModal .modal-body");
+  if (!settingsBody) return;
+
+  if (activeSettingsTab !== "media") {
+    settingsTabsLastScrollTop = settingsBody.scrollTop;
+    settingsTabsScrollDownAcc = 0;
+    settingsTabsScrollUpAcc = 0;
+    if (settingsTabsAutoHidden) setSettingsTabsAutoHidden(false);
+    return;
+  }
+
+  const currentTop = settingsBody.scrollTop;
+  const prevTop = settingsTabsLastScrollTop;
+  settingsTabsLastScrollTop = currentTop;
+  const now = Date.now();
+  if (now < settingsTabsToggleLockUntil) return;
+  if (currentTop <= 8) {
+    settingsTabsScrollDownAcc = 0;
+    settingsTabsScrollUpAcc = 0;
+    if (settingsTabsAutoHidden) setSettingsTabsAutoHidden(false);
+    return;
+  }
+  const delta = currentTop - prevTop;
+  if (Math.abs(delta) < SETTINGS_TABS_MIN_DELTA) return;
+  if (delta > 0) {
+    settingsTabsScrollDownAcc += delta;
+    settingsTabsScrollUpAcc = 0;
+  } else {
+    settingsTabsScrollUpAcc += -delta;
+    settingsTabsScrollDownAcc = 0;
+  }
+  if (!settingsTabsAutoHidden && currentTop > 64 && settingsTabsScrollDownAcc >= SETTINGS_TABS_HIDE_SCROLL_PX) {
+    setSettingsTabsAutoHidden(true);
+    settingsTabsScrollDownAcc = 0;
+    settingsTabsScrollUpAcc = 0;
+    settingsTabsToggleLockUntil = now + SETTINGS_TABS_TOGGLE_LOCK_MS;
+    return;
+  }
+  if (settingsTabsAutoHidden && settingsTabsScrollUpAcc >= SETTINGS_TABS_SHOW_SCROLL_PX) {
+    setSettingsTabsAutoHidden(false);
+    settingsTabsScrollDownAcc = 0;
+    settingsTabsScrollUpAcc = 0;
+    settingsTabsToggleLockUntil = now + SETTINGS_TABS_TOGGLE_LOCK_MS;
+  }
 }
 
 function renderPresetGrid() {
@@ -860,10 +931,19 @@ function openSettingsModal() {
   document.body.classList.add("no-scroll");
   switchSettingsTab("base");
   syncSettingsPaneHeight();
+  settingsTabsLastScrollTop = 0;
+  settingsTabsScrollDownAcc = 0;
+  settingsTabsScrollUpAcc = 0;
+  settingsTabsToggleLockUntil = 0;
+  setSettingsTabsAutoHidden(false);
 }
 
 function closeSettingsModal() {
   $("settingsModal").classList.add("hidden");
+  settingsTabsScrollDownAcc = 0;
+  settingsTabsScrollUpAcc = 0;
+  settingsTabsToggleLockUntil = 0;
+  setSettingsTabsAutoHidden(false);
   if (!hasAnyModalOpen()) {
     document.body.classList.remove("no-scroll");
   }
@@ -1016,16 +1096,19 @@ function renderUploadThumb(key, path) {
   if (!item) return;
   const img = $(item.thumbId);
   const wrap = $(item.wrapId);
+  const removeBtn = item.removeBtnId ? $(item.removeBtnId) : null;
   if (!img || !wrap) return;
 
   if (!path) {
     img.removeAttribute("src");
     wrap.hidden = true;
+    if (removeBtn) removeBtn.hidden = true;
     return;
   }
 
   img.src = toAssetUrl(path);
   wrap.hidden = false;
+  if (removeBtn) removeBtn.hidden = false;
 }
 
 function syncUploadThumbsFromConfig(cfg) {
@@ -1561,6 +1644,29 @@ async function uploadBlob(blob, filename, key) {
   state.config[key] = data.path;
   renderUploadThumb(key, data.path);
   saveGuestDraft();
+}
+
+async function removeUploadedAssetByKey(key) {
+  const item = UPLOAD_PREVIEW_FIELDS.find((x) => x.key === key);
+  if (!item) return;
+  if (!state.config[key]) return;
+
+  const ok = await appConfirm(`确认删除${item.label}吗？`, "删除素材");
+  if (!ok) return;
+
+  state.config[key] = "";
+  if (key === "bg_image_path") {
+    state.config.bg_mode = "custom";
+    renderPresetGrid();
+  }
+  renderUploadThumb(key, "");
+  if (item.uploadInputId) {
+    const input = $(item.uploadInputId);
+    if (input) input.value = "";
+  }
+  saveGuestDraft();
+  await refreshPreview();
+  $("statusText").textContent = `${item.label}已删除`;
 }
 
 function clamp(v, min, max) {
@@ -2124,6 +2230,7 @@ async function init() {
   document.querySelectorAll("[data-settings-tab]").forEach((btn) => {
     btn.addEventListener("click", () => switchSettingsTab(btn.dataset.settingsTab));
   });
+  document.querySelector("#settingsModal .modal-body")?.addEventListener("scroll", handleSettingsBodyScroll, { passive: true });
 
   window.addEventListener("resize", debounce(syncSettingsPaneHeight, 120));
   window.addEventListener("resize", syncFooterNoteVisibility);
@@ -2364,6 +2471,20 @@ async function init() {
         showStatusError(e2.message || "上传失败");
       } finally {
         e.target.value = "";
+      }
+    });
+  });
+
+  UPLOAD_PREVIEW_FIELDS.forEach((item) => {
+    const btn = item.removeBtnId ? $(item.removeBtnId) : null;
+    if (!btn) return;
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        await removeUploadedAssetByKey(item.key);
+      } catch (err) {
+        showStatusError(err?.message || "删除素材失败");
       }
     });
   });

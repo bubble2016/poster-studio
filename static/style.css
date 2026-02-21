@@ -593,6 +593,9 @@ button:disabled {
     transform: none;
     filter: none;
   }
+  .settings-tabs {
+    transition: none;
+  }
 }
 .icon-btn:focus-visible,
 .ghost-btn:focus-visible,
@@ -668,6 +671,16 @@ select:focus-visible {
   background: rgba(249, 251, 255, .88);
   backdrop-filter: blur(6px);
   scrollbar-width: none;
+  opacity: 1;
+  transform: translateY(0);
+  transition: transform .22s ease, opacity .18s ease;
+  will-change: transform, opacity;
+}
+.settings-tabs.is-auto-hidden {
+  transform: translateY(calc(-100% - 8px));
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
 }
 .settings-tabs::-webkit-scrollbar { display: none; }
 .settings-tab {
@@ -823,6 +836,7 @@ select:focus-visible {
   margin-top: 8px;
   width: min(100%, 110px);
   aspect-ratio: 4 / 3;
+  position: relative;
   border: 1px solid #d7e3ef;
   border-radius: 10px;
   overflow: hidden;
@@ -833,6 +847,66 @@ select:focus-visible {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+.upload-thumb-remove {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  min-width: 0;
+  min-height: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  line-height: 0;
+  font-size: 0;
+  border-radius: 999px;
+  border: none;
+  background: rgba(255, 255, 255, .78);
+  color: rgba(51, 65, 85, .78);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, .14);
+  opacity: 0;
+  transform: translateY(-2px) scale(.96);
+  pointer-events: none;
+  transition: opacity .16s ease, transform .16s ease, color .16s ease, background-color .16s ease, box-shadow .16s ease;
+}
+.upload-thumb-remove svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.upload-thumb:hover .upload-thumb-remove,
+.upload-thumb:focus-within .upload-thumb-remove {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+.upload-thumb-remove:hover,
+.upload-thumb-remove:focus-visible {
+  background: rgba(255, 255, 255, .96);
+  color: #dc2626;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, .2);
+}
+@media (hover: none), (pointer: coarse) {
+  .upload-thumb-remove {
+    min-width: 0;
+    min-height: 0;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    opacity: .72;
+    transform: none;
+    pointer-events: auto;
+    background: rgba(255, 255, 255, .72);
+    color: rgba(220, 38, 38, .72);
+  }
 }
 .modal-card {
   margin-bottom: 16px;
@@ -854,6 +928,10 @@ select:focus-visible {
   flex: 1;
   min-height: 0;
   padding-bottom: 12px;
+}
+
+#settingsModal .modal-panel {
+  height: min(90vh, 860px);
 }
 
 #settingsModal .modal-actions {
@@ -1419,6 +1497,7 @@ body.is-desktop-preview-focus .editor-col {
     bottom: auto;
     transform: translateY(-50%);
     width: min(760px, calc(100vw - 48px));
+    height: min(860px, calc(100vh - 48px));
     max-height: calc(100vh - 48px);
     animation: none;
   }
