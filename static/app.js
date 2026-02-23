@@ -958,7 +958,7 @@ function handleSettingsBodyScroll() {
   const settingsBody = document.querySelector("#settingsModal .modal-body");
   if (!settingsBody) return;
 
-  if (activeSettingsTab !== "media") {
+  if (activeSettingsTab !== "media" && activeSettingsTab !== "style") {
     settingsTabsLastScrollTop = settingsBody.scrollTop;
     settingsTabsScrollDownAcc = 0;
     settingsTabsScrollUpAcc = 0;
@@ -1216,6 +1216,24 @@ function toDownloadUrl(path) {
     .map((seg) => encodeURIComponent(seg))
     .join("/");
   return `/download/${safePath}`;
+}
+
+function triggerFileDownload(downloadUrl, fileName = "") {
+  if (!downloadUrl) return false;
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = downloadUrl;
+    anchor.target = "_self";
+    if (fileName) anchor.setAttribute("download", fileName);
+    anchor.rel = "noopener";
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 function renderUploadThumb(key, path) {
@@ -2534,12 +2552,15 @@ async function init() {
     saveGuestDraft();
   });
 
-  $("deleteTemplateBtn").addEventListener("click", () => {
+  $("deleteTemplateBtn").addEventListener("click", async () => {
     const name = $("templateSelect").value;
+    if (!name) return;
     if (state.systemTemplates[name]) {
-      appAlert("系统模板不可删除");
+      await appAlert("系统模板不可删除");
       return;
     }
+    const ok = await appConfirm(`确认删除模板“${name}”吗？此操作不可撤销。`, "删除模板");
+    if (!ok) return;
     delete state.config.custom_templates[name];
     $("templateSelect").querySelector(`option[value="${name}"]`)?.remove();
     if ($("templateSelect").options.length > 0) {
@@ -2549,6 +2570,7 @@ async function init() {
       updateStats();
     }
     saveGuestDraft();
+    showToast(`模板“${name}”已删除`);
   });
 
   $("saveConfigBtn").addEventListener("click", async () => {
@@ -2631,7 +2653,10 @@ async function init() {
     try {
       const d = await api("/api/generate", "POST", payload);
       const downloadUrl = toDownloadUrl(d.file);
-      window.open(downloadUrl, "_blank");
+      const downloaded = triggerFileDownload(downloadUrl, d.name || "");
+      if (!downloaded) {
+        window.open(downloadUrl, "_blank");
+      }
       vibrate(30);
       $("statusText").textContent = withGuestHint(`已生成 ${d.name}`);
       await openCopyTextDialog(buildCopyTextForGeneratedPoster());
