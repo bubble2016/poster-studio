@@ -209,8 +209,27 @@ p { margin: 4px 0 0; color: var(--muted); font-size: .88rem; }
   color: #46586d;
   border-color: rgba(148, 163, 184, .45);
 }
+.template-manager-body {
+  overflow: hidden;
+  max-height: 420px;
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+.template-manager-card.is-ready .template-manager-body {
+  transition: max-height .28s ease, opacity .2s ease, transform .2s ease, margin .2s ease, padding .2s ease, visibility 0s linear 0s;
+}
 .template-manager-card.is-collapsed .template-manager-body {
-  display: none !important;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  visibility: hidden;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  transition: max-height .26s ease, opacity .16s ease, transform .16s ease, margin .16s ease, padding .16s ease, visibility 0s linear .26s;
 }
 .template-manager-tip {
   position: absolute;
@@ -1069,6 +1088,33 @@ select:focus-visible {
   font-size: .9rem;
   line-height: 1.5;
 }
+.copy-dialog-tip {
+  display: block;
+  margin-bottom: 8px;
+}
+.copy-dialog-text {
+  width: 100%;
+  min-height: 170px;
+  margin: 0;
+  resize: vertical;
+  font-size: .84rem;
+  line-height: 1.45;
+}
+.copy-dialog-row {
+  display: block;
+  margin-top: 10px;
+}
+.copy-dialog-row .mini-btn {
+  width: 100%;
+}
+.copy-dialog-row .mini-btn.is-success {
+  background: #dcfce7;
+  color: #166534;
+}
+.copy-dialog-row .mini-btn.is-error {
+  background: #fee2e2;
+  color: #991b1b;
+}
 .dialog-danger-text {
   color: #b42318;
   font-weight: 700;
@@ -1089,6 +1135,17 @@ select:focus-visible {
 }
 .dialog-panel .modal-actions {
   grid-template-columns: 1fr 1fr;
+}
+#dialogModal.is-copy-dialog #closeDialogBtn {
+  display: none;
+}
+#dialogModal.is-copy-dialog .modal-actions {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+#dialogModal.is-copy-dialog .modal-actions > button {
+  width: min(320px, 72%);
+  margin: 0 auto;
 }
 .crop-tip {
   margin: 0 0 10px;

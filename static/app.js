@@ -205,6 +205,7 @@ function openDialog(options = {}) {
   input.value = options.defaultValue || "";
   input.placeholder = options.placeholder || "";
   modal.classList.toggle("is-prompt", mode === "prompt");
+  modal.classList.toggle("is-copy-dialog", !!options.isCopyDialog);
 
   modal.classList.remove("hidden");
   document.body.classList.add("no-scroll");
@@ -225,6 +226,7 @@ function closeDialog(result = null) {
   if (!modal || modal.classList.contains("hidden")) return;
   modal.classList.add("hidden");
   modal.classList.remove("is-prompt");
+  modal.classList.remove("is-copy-dialog");
   if (!hasAnyModalOpen()) {
     document.body.classList.remove("no-scroll");
   }
@@ -246,6 +248,125 @@ async function appPrompt(message, defaultValue = "", title = "请输入", placeh
   const ret = await openDialog({ mode: "prompt", title, message, defaultValue, placeholder, confirmText: "确定", cancelText: "取消" });
   if (!ret || ret.action !== "confirm") return null;
   return ret.value;
+}
+
+function buildCopyTextForGeneratedPoster() {
+  const title = $("titleInput")?.value.trim() || "";
+  const date = $("dateInput")?.value.trim() || "";
+  const content = $("contentInput")?.value || "";
+  const body = content.trim();
+  const out = [];
+  if (title) out.push(title);
+  if (date) out.push(date);
+  if (body) {
+    if (out.length) out.push("");
+    out.push(body);
+  }
+  return out.join("\n").trim();
+}
+
+async function copyTextToClipboard(text) {
+  const value = String(text ?? "");
+  if (!value) return false;
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch (_) {
+    }
+  }
+
+  const ta = document.createElement("textarea");
+  ta.value = value;
+  ta.setAttribute("readonly", "readonly");
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  ta.style.pointerEvents = "none";
+  ta.style.top = "-9999px";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  ta.setSelectionRange(0, ta.value.length);
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch (_) {
+    copied = false;
+  }
+  document.body.removeChild(ta);
+  return copied;
+}
+
+async function openCopyTextDialog(text) {
+  const messageHtml = `
+    <span class="copy-dialog-tip">已为你准备好本次生成文案，可直接复制：</span>
+    <textarea id="copyTextDialogInput" class="copy-dialog-text" rows="8" readonly></textarea>
+    <span class="copy-dialog-row">
+      <button id="copyTextDialogBtn" class="mini-btn" type="button">复制文案</button>
+    </span>
+  `;
+  const dialogPromise = openDialog({
+    mode: "alert",
+    title: "文案复制",
+    messageHtml,
+    confirmText: "关闭",
+    isCopyDialog: true,
+  });
+  const input = $("copyTextDialogInput");
+  const copyBtn = $("copyTextDialogBtn");
+  let btnFeedbackTimer = 0;
+  const setBtnFeedback = (message, tone = "", autoResetMs = 0) => {
+    if (!copyBtn) return;
+    if (!copyBtn.dataset.baseText) {
+      copyBtn.dataset.baseText = copyBtn.textContent || "复制文案";
+    }
+    if (btnFeedbackTimer) {
+      window.clearTimeout(btnFeedbackTimer);
+      btnFeedbackTimer = 0;
+    }
+    copyBtn.textContent = message || copyBtn.dataset.baseText;
+    copyBtn.classList.toggle("is-success", tone === "success");
+    copyBtn.classList.toggle("is-error", tone === "error");
+    if (autoResetMs > 0) {
+      btnFeedbackTimer = window.setTimeout(() => {
+        copyBtn.textContent = copyBtn.dataset.baseText || "复制文案";
+        copyBtn.classList.remove("is-success", "is-error");
+      }, autoResetMs);
+    }
+  };
+  const prepared = String(text || "").trim();
+  if (input) {
+    input.value = prepared;
+    input.addEventListener("focus", () => input.select());
+  }
+  if (copyBtn) {
+    copyBtn.addEventListener("click", async () => {
+      const source = $("copyTextDialogInput");
+      const value = source?.value || "";
+      if (!value.trim()) {
+        setBtnFeedback("暂无可复制文案", "error", 1100);
+        return;
+      }
+      copyBtn.disabled = true;
+      const ok = await copyTextToClipboard(value);
+      copyBtn.disabled = false;
+      if (ok) {
+        setBtnFeedback("已复制", "success", 800);
+        showToast("文案已复制");
+        return;
+      }
+      if (source) {
+        source.focus();
+        source.select();
+      }
+      setBtnFeedback("请按 Ctrl+C 复制", "error", 1600);
+    });
+  }
+  if (!prepared) {
+    setBtnFeedback("当前文案为空", "error", 1200);
+  }
+  await dialogPromise;
 }
 
 function showStatusError(msg) {
@@ -447,13 +568,19 @@ function syncTemplateManagerCollapseUi() {
   if (!card.dataset.collapseInited) {
     card.classList.add("is-collapsed");
     card.dataset.collapseInited = "1";
+    window.requestAnimationFrame(() => {
+      card.classList.add("is-ready");
+    });
   }
   const collapsed = card.classList.contains("is-collapsed");
   toggleBtn.hidden = false;
   toggleBtn.textContent = collapsed ? "展开" : "收起";
   toggleBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
   bodyBlocks.forEach((el) => {
-    el.hidden = collapsed;
+    el.setAttribute("aria-hidden", collapsed ? "true" : "false");
+    if ("inert" in el) {
+      el.inert = collapsed;
+    }
   });
   if (!collapsed || hasSeenTemplateManagerTip()) {
     clearTemplateManagerTipAutoHide();
@@ -2507,6 +2634,7 @@ async function init() {
       window.open(downloadUrl, "_blank");
       vibrate(30);
       $("statusText").textContent = withGuestHint(`已生成 ${d.name}`);
+      await openCopyTextDialog(buildCopyTextForGeneratedPoster());
       if (state.isGuest && !state.guestRegisterTipShown) {
         state.guestRegisterTipShown = true;
         await appAlert("已生成成功。建议注册一个用户：可以保存设置和内容，下次可直接继续使用。", "提示");
