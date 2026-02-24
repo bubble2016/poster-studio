@@ -1,6 +1,7 @@
 ﻿const state = {
   config: {},
   presets: [],
+  defaultLogos: [],
   systemTemplates: {},
   systemTemplateMeta: {},
   currentUser: "",
@@ -72,6 +73,93 @@ const RANGE_VALUE_FIELDS = [
   { inputId: "watermarkOpacity", valueId: "watermarkOpacityValue", format: (v) => `${Math.round((Number(v) || 0) * 100)}%` },
   { inputId: "watermarkDensity", valueId: "watermarkDensityValue", format: (v) => `${(Number(v) || 0).toFixed(1)}x` },
 ];
+
+const UPLOAD_PLACEHOLDER_SVGS = Object.freeze({
+  bg_image_path: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f3f5f8"/><stop offset="1" stop-color="#eceff3"/>
+    </linearGradient>
+    <linearGradient id="bgCard" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f9fbff"/><stop offset="1" stop-color="#eef3f9"/>
+    </linearGradient>
+  </defs>
+  <rect width="220" height="220" rx="18" fill="url(#g)"/>
+  <rect x="58" y="18" width="104" height="170" rx="14" fill="url(#bgCard)" stroke="#c8d2de" stroke-width="2"/>
+  <rect x="66" y="28" width="88" height="48" rx="10" fill="#dfe7f2"/>
+  <circle cx="82" cy="42" r="6" fill="#b8c3d1"/>
+  <path d="M70 72 L96 52 L112 66 L130 54 L150 74 L70 74 Z" fill="#b7c2d0"/>
+  <rect x="66" y="84" width="88" height="8" rx="4" fill="#d0d9e5"/>
+  <rect x="66" y="96" width="72" height="8" rx="4" fill="#d0d9e5"/>
+  <rect x="66" y="112" width="88" height="56" rx="10" fill="#e4ebf4"/>
+  <text x="110" y="204" text-anchor="middle" font-size="15" fill="#9da7b3" font-family="Noto Sans SC,Microsoft YaHei,sans-serif">待上传</text>
+</svg>`,
+  logo_image_path: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4f6f8"/><stop offset="1" stop-color="#eceff2"/>
+    </linearGradient>
+  </defs>
+  <rect width="220" height="220" rx="18" fill="url(#g)"/>
+  <circle cx="110" cy="88" r="50" fill="none" stroke="#afb7c1" stroke-width="8"/>
+  <polygon points="110,52 143,72 143,106 110,126 77,106 77,72" fill="#bcc4cd"/>
+  <text x="110" y="192" text-anchor="middle" font-size="15" fill="#9da7b3" font-family="Noto Sans SC,Microsoft YaHei,sans-serif">待上传</text>
+</svg>`,
+  stamp_image_path: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4f6f8"/><stop offset="1" stop-color="#eceff2"/>
+    </linearGradient>
+    <linearGradient id="sealStroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#aeb7c2"/><stop offset="1" stop-color="#8f9aa8"/>
+    </linearGradient>
+  </defs>
+  <rect width="220" height="220" rx="18" fill="url(#g)"/>
+  <circle cx="110" cy="90" r="56" fill="rgba(255,255,255,.55)" stroke="url(#sealStroke)" stroke-width="6"/>
+  <circle cx="110" cy="90" r="42" fill="none" stroke="#a0aab7" stroke-width="3" stroke-dasharray="2 4"/>
+  <polygon points="110,63 116.8,76.8 132,79 121,89.8 123.6,105 110,97.8 96.4,105 99,89.8 88,79 103.2,76.8" fill="#8f9aa8"/>
+  <text x="110" y="192" text-anchor="middle" font-size="15" fill="#9da7b3" font-family="Noto Sans SC,Microsoft YaHei,sans-serif">待上传</text>
+</svg>`,
+  qrcode_image_path: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4f6f8"/><stop offset="1" stop-color="#eceff2"/>
+    </linearGradient>
+  </defs>
+  <rect width="220" height="220" rx="18" fill="url(#g)"/>
+  <rect x="46" y="36" width="128" height="128" rx="10" fill="#fff" stroke="#cad3df" stroke-width="2"/>
+  <rect x="56" y="46" width="32" height="32" fill="#97a3b2"/>
+  <rect x="62" y="52" width="20" height="20" fill="#fff"/>
+  <rect x="66" y="56" width="12" height="12" fill="#97a3b2"/>
+  <rect x="132" y="46" width="32" height="32" fill="#97a3b2"/>
+  <rect x="138" y="52" width="20" height="20" fill="#fff"/>
+  <rect x="142" y="56" width="12" height="12" fill="#97a3b2"/>
+  <rect x="56" y="122" width="32" height="32" fill="#97a3b2"/>
+  <rect x="62" y="128" width="20" height="20" fill="#fff"/>
+  <rect x="66" y="132" width="12" height="12" fill="#97a3b2"/>
+  <rect x="102" y="92" width="8" height="8" fill="#97a3b2"/>
+  <rect x="114" y="92" width="8" height="8" fill="#97a3b2"/>
+  <rect x="126" y="92" width="8" height="8" fill="#97a3b2"/>
+  <rect x="102" y="104" width="8" height="8" fill="#97a3b2"/>
+  <rect x="126" y="104" width="8" height="8" fill="#97a3b2"/>
+  <rect x="102" y="116" width="8" height="8" fill="#97a3b2"/>
+  <rect x="114" y="116" width="8" height="8" fill="#97a3b2"/>
+  <rect x="138" y="116" width="8" height="8" fill="#97a3b2"/>
+  <rect x="114" y="128" width="8" height="8" fill="#97a3b2"/>
+  <rect x="126" y="128" width="8" height="8" fill="#97a3b2"/>
+  <rect x="138" y="128" width="8" height="8" fill="#97a3b2"/>
+  <rect x="102" y="140" width="8" height="8" fill="#97a3b2"/>
+  <rect x="126" y="140" width="8" height="8" fill="#97a3b2"/>
+  <rect x="150" y="104" width="8" height="8" fill="#97a3b2"/>
+  <rect x="150" y="128" width="8" height="8" fill="#97a3b2"/>
+  <text x="110" y="192" text-anchor="middle" font-size="15" fill="#9da7b3" font-family="Noto Sans SC,Microsoft YaHei,sans-serif">待上传</text>
+</svg>`,
+});
+
+function getUploadPlaceholderDataUrl(key) {
+  const svg = UPLOAD_PLACEHOLDER_SVGS[key] || UPLOAD_PLACEHOLDER_SVGS.bg_image_path;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
 
 function toTodayDateText() {
   return toDayKey(new Date());
@@ -155,6 +243,138 @@ function normalizeCardStyle(style) {
   return AVAILABLE_CARD_STYLES.has(savedStyle) ? savedStyle : "single";
 }
 
+function pickRandomDifferentPath(items, currentPath) {
+  const paths = (items || []).map((x) => String(x.path || "").trim()).filter(Boolean);
+  if (!paths.length) return "";
+  const nowPath = String(currentPath || "").trim();
+  const candidates = paths.filter((p) => p !== nowPath);
+  const pool = candidates.length ? candidates : paths;
+  return pool[Math.floor(Math.random() * pool.length)] || "";
+}
+
+function closeEnhancedSelectPanel(root, options = {}) {
+  if (!root) return;
+  const panel = root.querySelector(".tm-select-panel");
+  const trigger = root.querySelector(".tm-select-trigger");
+  const immediate = !!options.immediate;
+  if (immediate && panel) {
+    panel.style.transition = "none";
+  }
+  root.classList.remove("is-open");
+  if (trigger) trigger.setAttribute("aria-expanded", "false");
+  if (immediate && panel) {
+    requestAnimationFrame(() => {
+      panel.style.transition = "";
+    });
+  }
+  syncFloatingSelectState();
+}
+
+function closeAllEnhancedSelectPanels(exceptRoot = null) {
+  document.querySelectorAll(".tm-select.is-open").forEach((root) => {
+    if (exceptRoot && root === exceptRoot) return;
+    closeEnhancedSelectPanel(root);
+  });
+  syncFloatingSelectState();
+}
+
+function syncFloatingSelectState() {
+  const hasOpen = !!document.querySelector(".tm-select.is-open");
+  document.body.classList.toggle("has-floating-select", hasOpen);
+}
+
+function initEnhancedTemplateSelect(selectId) {
+  const selectEl = $(selectId);
+  if (!selectEl || selectEl.dataset.enhanced === "1") return;
+
+  const root = document.createElement("div");
+  root.className = "tm-select";
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "tm-select-trigger";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+
+  const panel = document.createElement("div");
+  panel.className = "tm-select-panel";
+
+  const list = document.createElement("ul");
+  list.className = "tm-select-list";
+  list.setAttribute("role", "listbox");
+  panel.appendChild(list);
+
+  root.appendChild(trigger);
+  root.appendChild(panel);
+  selectEl.insertAdjacentElement("afterend", root);
+  selectEl.classList.add("tm-native-select");
+  selectEl.tabIndex = -1;
+  selectEl.dataset.enhanced = "1";
+
+  const sync = () => {
+    const options = [...selectEl.options];
+    const selectedOpt = options.find((o) => o.selected) || options[0];
+    trigger.textContent = selectedOpt?.textContent || "请选择";
+    list.innerHTML = "";
+
+    options.forEach((opt) => {
+      const li = document.createElement("li");
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "tm-select-option";
+      btn.textContent = opt.textContent || opt.value || "";
+      btn.dataset.value = opt.value;
+      btn.disabled = !!opt.disabled;
+      btn.setAttribute("role", "option");
+      btn.setAttribute("aria-selected", String(opt.selected));
+      if (opt.selected) btn.classList.add("is-selected");
+      btn.addEventListener("click", () => {
+        if (opt.disabled) return;
+        closeEnhancedSelectPanel(root, { immediate: true });
+        if (selectEl.value !== opt.value) {
+          selectEl.value = opt.value;
+          selectEl.dispatchEvent(new Event("input", { bubbles: true }));
+          selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+      li.appendChild(btn);
+      list.appendChild(li);
+    });
+  };
+
+  trigger.addEventListener("click", () => {
+    const nextOpen = !root.classList.contains("is-open");
+    closeAllEnhancedSelectPanels(nextOpen ? root : null);
+    root.classList.toggle("is-open", nextOpen);
+    trigger.setAttribute("aria-expanded", String(nextOpen));
+    syncFloatingSelectState();
+  });
+
+  trigger.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeEnhancedSelectPanel(root);
+      return;
+    }
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      trigger.click();
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!root.contains(e.target)) closeEnhancedSelectPanel(root);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeEnhancedSelectPanel(root);
+  });
+
+  selectEl.addEventListener("change", sync);
+  const observer = new MutationObserver(sync);
+  observer.observe(selectEl, { childList: true, subtree: true, attributes: true });
+  sync();
+  syncFloatingSelectState();
+}
+
 async function api(url, method = "GET", body = null) {
   const res = await fetch(url, {
     method,
@@ -205,7 +425,8 @@ function openDialog(options = {}) {
   const input = $("dialogInput");
   const confirmBtn = $("dialogConfirmBtn");
   const cancelBtn = $("dialogCancelBtn");
-  if (!modal || !title || !message || !inputWrap || !input || !confirmBtn || !cancelBtn) return Promise.resolve(null);
+  const closeBtn = $("closeDialogBtn");
+  if (!modal || !title || !message || !inputWrap || !input || !confirmBtn || !cancelBtn || !closeBtn) return Promise.resolve(null);
 
   const mode = options.mode || "alert";
   dialogState.mode = mode;
@@ -218,6 +439,7 @@ function openDialog(options = {}) {
   confirmBtn.textContent = options.confirmText || "确定";
   cancelBtn.textContent = options.cancelText || "取消";
   cancelBtn.hidden = mode === "alert";
+  closeBtn.hidden = mode !== "alert";
   inputWrap.hidden = mode !== "prompt";
   inputWrap.style.display = mode === "prompt" ? "" : "none";
   input.value = options.defaultValue || "";
@@ -1342,16 +1564,25 @@ function renderUploadThumb(key, path) {
   const removeBtn = item.removeBtnId ? $(item.removeBtnId) : null;
   if (!img || !wrap) return;
 
-  if (!path) {
-    img.removeAttribute("src");
-    wrap.hidden = true;
-    if (removeBtn) removeBtn.hidden = true;
-    return;
-  }
+  const placeholderSrc = getUploadPlaceholderDataUrl(key);
+  const realSrc = path ? toAssetUrl(path) : "";
+  const isPlaceholder = !realSrc;
 
-  img.src = toAssetUrl(path);
+  img.onerror = () => {
+    img.onerror = null;
+    img.src = placeholderSrc;
+    wrap.classList.add("is-placeholder");
+    if (removeBtn) removeBtn.hidden = true;
+  };
+  img.src = realSrc || placeholderSrc;
+  wrap.classList.toggle("is-placeholder", isPlaceholder);
+  wrap.dataset.hasRealImage = isPlaceholder ? "0" : "1";
   wrap.hidden = false;
-  if (removeBtn) removeBtn.hidden = false;
+  if (removeBtn) {
+    removeBtn.hidden = isPlaceholder;
+    removeBtn.disabled = isPlaceholder;
+    removeBtn.setAttribute("aria-hidden", isPlaceholder ? "true" : "false");
+  }
 }
 
 function syncUploadThumbsFromConfig(cfg) {
@@ -2158,6 +2389,7 @@ async function init() {
   state.systemTemplates = data.system_templates || {};
   state.systemTemplateMeta = data.system_template_meta || {};
   state.presets = data.presets || [];
+  state.defaultLogos = data.default_logos || [];
 
   bindFromConfig(state.config);
   renderPresetGrid();
@@ -2231,6 +2463,8 @@ async function init() {
     applyTemplateByName(tplSel.value);
     updateStats();
   }
+  initEnhancedTemplateSelect("templateSelect");
+  initEnhancedTemplateSelect("exportFormat");
 
   const onType = debounce(async () => {
     updateStats();
@@ -2781,6 +3015,38 @@ async function init() {
     });
   });
 
+  $("bgThumbRandomBtn")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const nextPath = pickRandomDifferentPath(state.presets, state.config.bg_image_path);
+    if (!nextPath) {
+      showToast("暂无可用背景预设");
+      return;
+    }
+    state.config.bg_mode = "preset";
+    state.config.bg_image_path = nextPath;
+    renderPresetGrid();
+    renderUploadThumb("bg_image_path", nextPath);
+    saveGuestDraft();
+    await refreshPreview();
+    $("statusText").textContent = "已随机切换背景";
+  });
+
+  $("logoThumbRandomBtn")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const nextPath = pickRandomDifferentPath(state.defaultLogos, state.config.logo_image_path);
+    if (!nextPath) {
+      showToast("暂无可用默认 Logo");
+      return;
+    }
+    state.config.logo_image_path = nextPath;
+    renderUploadThumb("logo_image_path", nextPath);
+    saveGuestDraft();
+    await refreshPreview();
+    $("statusText").textContent = "已随机切换 Logo";
+  });
+
   $("generateBtn").addEventListener("click", async () => {
     const btn = $("generateBtn");
     vibrate(10);
@@ -2873,6 +3139,8 @@ async function init() {
 init().catch((e) => {
   $("statusText").textContent = `初始化失败: ${e.message}`;
 });
+
+
 
 
 

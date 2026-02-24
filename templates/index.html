@@ -11,7 +11,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=20260224v400" />
+  <link rel="stylesheet" href="/static/style.css?v=20260224v413" />
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 </head>
 
@@ -310,11 +310,12 @@
             </div>
           </div>
           <div class="field-grid media-grid">
-            <label class="upload-field">背景图
+            <label class="upload-field upload-field-bg">背景图
               <input id="bgUpload" type="file" accept="image/*" />
               <p class="upload-hint">JPG / PNG / WebP · 最大 15MB</p>
-              <div class="upload-thumb" id="bgThumbWrap" hidden>
+              <div class="upload-thumb" id="bgThumbWrap" data-kind="背景图" hidden>
                 <img id="bgThumb" alt="背景图缩略图" loading="lazy" />
+                <button id="bgThumbRandomBtn" class="upload-thumb-random" type="button" aria-label="随机选择背景图">随机</button>
                 <button id="bgThumbRemoveBtn" class="upload-thumb-remove" type="button" aria-label="删除背景图">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M3 6h18" />
@@ -326,11 +327,12 @@
                 </button>
               </div>
             </label>
-            <label class="upload-field">Logo
+            <label class="upload-field upload-field-logo">Logo
               <input id="logoUpload" type="file" accept="image/*" />
               <p class="upload-hint">JPG / PNG / WebP · 最大 15MB · 支持自动裁剪</p>
-              <div class="upload-thumb" id="logoThumbWrap" hidden>
+              <div class="upload-thumb" id="logoThumbWrap" data-kind="Logo" hidden>
                 <img id="logoThumb" alt="Logo 缩略图" loading="lazy" />
+                <button id="logoThumbRandomBtn" class="upload-thumb-random" type="button" aria-label="随机选择 Logo">随机</button>
                 <button id="logoThumbRemoveBtn" class="upload-thumb-remove" type="button" aria-label="删除 Logo">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M3 6h18" />
@@ -342,10 +344,10 @@
                 </button>
               </div>
             </label>
-            <label class="upload-field">印章
+            <label class="upload-field upload-field-stamp">印章
               <input id="stampUpload" type="file" accept="image/*" />
               <p class="upload-hint">建议使用透明背景 PNG · 最大 15MB</p>
-              <div class="upload-thumb" id="stampThumbWrap" hidden>
+              <div class="upload-thumb" id="stampThumbWrap" data-kind="印章" hidden>
                 <img id="stampThumb" alt="印章缩略图" loading="lazy" />
                 <button id="stampThumbRemoveBtn" class="upload-thumb-remove" type="button" aria-label="删除印章">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -358,10 +360,10 @@
                 </button>
               </div>
             </label>
-            <label class="upload-field">二维码
+            <label class="upload-field upload-field-qr">二维码
               <input id="qrUpload" type="file" accept="image/*" />
               <p class="upload-hint">JPG / PNG / WebP · 最大 15MB</p>
-              <div class="upload-thumb" id="qrThumbWrap" hidden>
+              <div class="upload-thumb" id="qrThumbWrap" data-kind="二维码" hidden>
                 <img id="qrThumb" alt="二维码缩略图" loading="lazy" />
                 <button id="qrThumbRemoveBtn" class="upload-thumb-remove" type="button" aria-label="删除二维码">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -519,7 +521,7 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=20260224v400"></script>
+  <script src="/static/app.js?v=20260224v414"></script>
 </body>
 
 </html>

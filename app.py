@@ -467,12 +467,16 @@ def _load_user_config(user_id):
     return cfg
 
 
-def _safe_join_data_path(relpath):
+def _safe_join_under(root_dir, relpath):
+    root = os.path.abspath(root_dir)
     abs_path = os.path.abspath(os.path.join(BASE_DIR, relpath))
-    data_root = os.path.abspath(DATA_DIR)
-    if abs_path == data_root or abs_path.startswith(data_root + os.sep):
+    if abs_path == root or abs_path.startswith(root + os.sep):
         return abs_path
     return ""
+
+
+def _safe_join_data_path(relpath):
+    return _safe_join_under(DATA_DIR, relpath)
 
 
 def _is_owned_output(relpath, abs_path, user_id):
@@ -500,11 +504,7 @@ def _is_owned_output(relpath, abs_path, user_id):
 
 
 def _safe_join_base_path(relpath):
-    abs_path = os.path.abspath(os.path.join(BASE_DIR, relpath))
-    base_root = os.path.abspath(BASE_DIR)
-    if abs_path == base_root or abs_path.startswith(base_root + os.sep):
-        return abs_path
-    return ""
+    return _safe_join_under(BASE_DIR, relpath)
 
 
 def _json_body():
@@ -592,6 +592,13 @@ def _is_admin_request():
     if provided and provided == token:
         return True, ""
     return False, "管理员鉴权失败"
+
+
+def _admin_guard():
+    ok, msg = _is_admin_request()
+    if ok:
+        return None
+    return jsonify({"error": msg}), 403
 
 
 def _collect_all_user_ids():
@@ -851,22 +858,25 @@ def api_init():
     uid = _ensure_user_id()
     cfg = _load_user_config(uid)
     presets = PresetGenerator.get_presets(BASE_DIR)
+    default_logos = PresetGenerator.get_default_logos(BASE_DIR)
     preset_payload = [{"name": name, "path": _public_path(path)} for name, path in presets.items()]
+    logo_payload = [{"name": name, "path": _public_path(path)} for name, path in default_logos.items()]
     return jsonify(
         {
             "config": cfg,
             "system_templates": SYSTEM_TEMPLATES,
             "system_template_meta": SYSTEM_TEMPLATE_META,
             "presets": preset_payload,
+            "default_logos": logo_payload,
         }
     )
 
 
 @app.get("/api/admin/users")
 def api_admin_users():
-    ok, msg = _is_admin_request()
-    if not ok:
-        return jsonify({"error": msg}), 403
+    blocked = _admin_guard()
+    if blocked:
+        return blocked
     users = _load_users()
     output_counts = _collect_output_counts()
     rows = []
@@ -891,9 +901,9 @@ def api_admin_users():
 
 @app.get("/api/admin/export")
 def api_admin_export():
-    ok, msg = _is_admin_request()
-    if not ok:
-        return jsonify({"error": msg}), 403
+    blocked = _admin_guard()
+    if blocked:
+        return blocked
     snapshot = _export_all_data_snapshot()
     download = str(request.args.get("download", "0")).strip().lower() in {"1", "true", "yes"}
     if not download:
@@ -907,9 +917,9 @@ def api_admin_export():
 
 @app.get("/api/admin/backup")
 def api_admin_backup():
-    ok, msg = _is_admin_request()
-    if not ok:
-        return jsonify({"error": msg}), 403
+    blocked = _admin_guard()
+    if blocked:
+        return blocked
     include_outputs = _coerce_request_bool(request.args.get("include_outputs"), True)
     files = _collect_backup_files(include_outputs)
     snapshot = _export_all_data_snapshot()
@@ -927,9 +937,9 @@ def api_admin_backup():
 
 @app.post("/api/admin/users/<user_id>/password")
 def api_admin_user_password(user_id):
-    ok, msg = _is_admin_request()
-    if not ok:
-        return jsonify({"error": msg}), 403
+    blocked = _admin_guard()
+    if blocked:
+        return blocked
     uid = _sanitize_user_id(user_id)
     if not uid:
         return jsonify({"error": "用户ID无效"}), 400
@@ -948,9 +958,9 @@ def api_admin_user_password(user_id):
 
 @app.patch("/api/admin/users/<user_id>/config")
 def api_admin_user_config(user_id):
-    ok, msg = _is_admin_request()
-    if not ok:
-        return jsonify({"error": msg}), 403
+    blocked = _admin_guard()
+    if blocked:
+        return blocked
     uid = _sanitize_user_id(user_id)
     if not uid:
         return jsonify({"error": "用户ID无效"}), 400
@@ -977,9 +987,9 @@ def api_admin_user_config(user_id):
 
 @app.delete("/api/admin/users/<user_id>")
 def api_admin_delete_user(user_id):
-    ok, msg = _is_admin_request()
-    if not ok:
-        return jsonify({"error": msg}), 403
+    blocked = _admin_guard()
+    if blocked:
+        return blocked
     include_outputs = _coerce_request_bool(request.args.get("include_outputs"), True)
     try:
         deleted = _admin_delete_user_data(user_id, include_outputs=include_outputs)
@@ -990,9 +1000,9 @@ def api_admin_delete_user(user_id):
 
 @app.post("/api/admin/guests/cleanup")
 def api_admin_cleanup_guests():
-    ok, msg = _is_admin_request()
-    if not ok:
-        return jsonify({"error": msg}), 403
+    blocked = _admin_guard()
+    if blocked:
+        return blocked
     try:
         data = _json_body()
     except ValueError as e:

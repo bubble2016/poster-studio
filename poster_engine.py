@@ -1215,7 +1215,7 @@ def draw_poster(content, date_str, title, cfg):
 
     logo = _load_image(cfg.get("logo_image_path"))
     if logo:
-        logo_size = 198
+        logo_size = 220
         logo_half = logo_size // 2
         ring_pad = 6
         logo_layer = _rounded_logo_layer(logo, logo_size, factor=4)
