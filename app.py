@@ -427,20 +427,43 @@ def _record_output_owner(relpath, user_id):
 
 def _load_user_config(user_id):
     user_path = _get_user_config_path(user_id)
-    if os.path.isfile(user_path):
-        return load_config(user_path)
-    cfg = load_config(CONFIG_PATH)
-    if not cfg.get("bg_image_path"):
-        presets = list(PresetGenerator.get_presets(BASE_DIR).values())
-        if presets:
-            picked = random.choice(presets)
-            cfg["bg_mode"] = "preset"
-            cfg["bg_image_path"] = _public_path(picked)
+    user_config_exists = os.path.isfile(user_path)
+    if user_config_exists:
+        cfg = load_config(user_path)
+    else:
+        cfg = load_config(CONFIG_PATH)
+    changed = False
+    if not user_config_exists:
+        if not cfg.get("bg_image_path"):
+            presets = list(PresetGenerator.get_presets(BASE_DIR).values())
+            if presets:
+                picked = random.choice(presets)
+                cfg["bg_mode"] = "preset"
+                cfg["bg_image_path"] = _public_path(picked)
+                changed = True
+    default_logos = list(PresetGenerator.get_default_logos(BASE_DIR).values())
+    legacy_default_names = {"default_logo_kraft_stamp.png"}
+    current_logo = str(cfg.get("logo_image_path") or "").strip()
+    current_logo_name = os.path.basename(current_logo.replace("\\", "/"))
+    current_logo_abs = _resolve_asset_path(current_logo) if current_logo else ""
+    should_replace_default_logo = (not current_logo) or (current_logo_name in legacy_default_names) or (
+        bool(current_logo) and (not current_logo_abs)
+    )
+    if should_replace_default_logo and default_logos:
+        picked_logo = random.choice(default_logos)
+        next_logo_path = _public_path(picked_logo)
+        if cfg.get("logo_image_path") != next_logo_path:
+            cfg["logo_image_path"] = next_logo_path
+            changed = True
     if _is_guest_user(user_id):
-        cfg["logo_image_path"] = ""
-        cfg["stamp_image_path"] = ""
-        cfg["qrcode_image_path"] = ""
-    save_config(user_path, cfg)
+        if cfg.get("stamp_image_path"):
+            cfg["stamp_image_path"] = ""
+            changed = True
+        if cfg.get("qrcode_image_path"):
+            cfg["qrcode_image_path"] = ""
+            changed = True
+    if (not user_config_exists) or changed:
+        save_config(user_path, cfg)
     return cfg
 
 
@@ -1205,4 +1228,3 @@ def api_batch_adjust():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5173, debug=DEV_AUTO_RELOAD, use_reloader=DEV_AUTO_RELOAD)
-

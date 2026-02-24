@@ -5,6 +5,7 @@ import math
 import os
 import random
 import re
+import shutil
 import tempfile
 import threading
 from copy import deepcopy
@@ -188,6 +189,35 @@ def _mix_with_white(rgb, ratio):
     )
 
 
+def _antialias_image(img, factor=3):
+    if factor <= 1:
+        return img
+    w, h = img.size
+    up = img.resize((w * factor, h * factor), Image.Resampling.BICUBIC)
+    return up.resize((w, h), Image.Resampling.LANCZOS)
+
+
+def _aa_circle_mask(size, factor=4):
+    s = max(2, int(size))
+    f = max(2, int(factor))
+    big = s * f
+    mask = Image.new("L", (big, big), 0)
+    d = ImageDraw.Draw(mask)
+    d.ellipse((0, 0, big - 1, big - 1), fill=255)
+    return mask.resize((s, s), Image.Resampling.LANCZOS)
+
+
+def _rounded_logo_layer(logo_img, size, factor=4):
+    s = max(2, int(size))
+    f = max(2, int(factor))
+    big = s * f
+    fitted = ImageOps.fit(logo_img.convert("RGBA"), (big, big), method=Image.Resampling.LANCZOS)
+    mask = _aa_circle_mask(big, factor=2)
+    out = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    out.paste(fitted, (0, 0), mask)
+    return out.resize((s, s), Image.Resampling.LANCZOS)
+
+
 class FontManager:
     _cache = {}
 
@@ -214,7 +244,31 @@ class FontManager:
 
 class PresetGenerator:
     _cache = {}
+    _default_logo_cache = {}
     _lock = threading.Lock()
+
+    @staticmethod
+    def _prepare_preset_dirs(base_dir):
+        presets_dir = os.path.join(base_dir, "presets")
+        backgrounds_dir = os.path.join(presets_dir, "backgrounds")
+        logos_dir = os.path.join(presets_dir, "logos")
+        os.makedirs(presets_dir, exist_ok=True)
+        os.makedirs(backgrounds_dir, exist_ok=True)
+        os.makedirs(logos_dir, exist_ok=True)
+        return presets_dir, backgrounds_dir, logos_dir
+
+    @staticmethod
+    def _sync_legacy_asset(legacy_dir, target_dir, filename):
+        legacy_path = os.path.join(legacy_dir, filename)
+        target_path = os.path.join(target_dir, filename)
+        legacy_ok = os.path.isfile(legacy_path) and os.path.getsize(legacy_path) >= 1024
+        target_ok = os.path.isfile(target_path) and os.path.getsize(target_path) >= 1024
+        if legacy_ok and (not target_ok):
+            try:
+                shutil.copy2(legacy_path, target_path)
+            except Exception:
+                pass
+        return target_path
 
     @staticmethod
     def _add_noise(img, intensity=0.08):
@@ -322,32 +376,43 @@ class PresetGenerator:
     def gen_recycled_paper():
         w, h = CANVAS_SIZE
         base = Image.new("RGB", (w, h), "#C7B190")
-        paper_noise = Image.effect_noise((w, h), 36).convert("L")
-        grain = Image.merge("RGB", (paper_noise, paper_noise, paper_noise))
-        img = ImageChops.blend(base, grain, 0.14)
+        # Multi-scale grain to improve paper fiber depth.
+        coarse = Image.effect_noise((w // 2, h // 2), 52).resize((w, h), Image.Resampling.BICUBIC).convert("L")
+        fine = Image.effect_noise((w, h), 24).convert("L")
+        grain = Image.blend(coarse, fine, 0.42)
+        grain_rgb = Image.merge("RGB", (grain, grain, grain))
+        img = ImageChops.blend(base, grain_rgb, 0.18)
         draw = ImageDraw.Draw(img)
         # Simulate irregular recycled fibers.
-        for _ in range(2600):
+        for _ in range(4300):
             x = random.randint(0, w - 1)
             y = random.randint(0, h - 1)
-            ln = random.randint(3, 11)
+            ln = random.randint(4, 14)
             ang = random.random() * math.pi
             x2 = int(x + math.cos(ang) * ln)
             y2 = int(y + math.sin(ang) * ln)
-            col = random.choice([(130, 111, 84, 30), (156, 138, 112, 26), (103, 88, 67, 24)])
+            col = random.choice([(130, 111, 84, 36), (156, 138, 112, 30), (103, 88, 67, 28), (171, 150, 122, 24)])
             draw.line([(x, y), (x2, y2)], fill=col, width=1)
         # Add random subtle stains.
         stain = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         sd = ImageDraw.Draw(stain)
-        for _ in range(24):
+        for _ in range(32):
             rx = random.randint(-80, w + 80)
             ry = random.randint(-80, h + 80)
-            rr = random.randint(80, 220)
-            alpha = random.randint(10, 24)
+            rr = random.randint(70, 260)
+            alpha = random.randint(10, 30)
             sd.ellipse((rx - rr, ry - rr, rx + rr, ry + rr), fill=(95, 75, 48, alpha))
-        stain = stain.filter(ImageFilter.GaussianBlur(24))
+        stain = stain.filter(ImageFilter.GaussianBlur(22))
         img = Image.alpha_composite(img.convert("RGBA"), stain).convert("RGB")
-        return PresetGenerator._add_noise(img, 0.045)
+        # Add subtle directional emboss for tactile paper feel.
+        relief = Image.effect_noise((w, h), 18).convert("L").filter(ImageFilter.GaussianBlur(1.2))
+        hi = Image.merge("RGBA", (relief, relief, relief, Image.new("L", (w, h), 16)))
+        lo = Image.merge("RGBA", (ImageOps.invert(relief), ImageOps.invert(relief), ImageOps.invert(relief), Image.new("L", (w, h), 12)))
+        rel = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        rel.paste(hi, (-1, -1), hi.split()[-1])
+        rel.paste(lo, (1, 1), lo.split()[-1])
+        img = Image.alpha_composite(img.convert("RGBA"), rel).convert("RGB")
+        return PresetGenerator._add_noise(img, 0.055)
 
     @staticmethod
     def gen_crumpled_kraft():
@@ -365,26 +430,155 @@ class PresetGenerator:
         # Crease lines: alternating highlights and shadows to mimic crumpled paper.
         crease = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         cd = ImageDraw.Draw(crease)
-        for _ in range(34):
+        for _ in range(56):
             x1 = random.randint(-160, w + 80)
             y1 = random.randint(0, h)
-            x2 = x1 + random.randint(280, 760)
-            y2 = y1 + random.randint(-120, 120)
-            width = random.randint(1, 3)
-            cd.line([(x1, y1), (x2, y2)], fill=(255, 244, 220, random.randint(22, 36)), width=width)
-            cd.line([(x1 + 2, y1 + 2), (x2 + 2, y2 + 2)], fill=(87, 63, 37, random.randint(18, 32)), width=width)
-        crease = crease.filter(ImageFilter.GaussianBlur(1.6))
+            x2 = x1 + random.randint(220, 860)
+            y2 = y1 + random.randint(-160, 160)
+            width = random.randint(1, 4)
+            cd.line([(x1, y1), (x2, y2)], fill=(255, 244, 220, random.randint(26, 44)), width=width)
+            cd.line([(x1 + 2, y1 + 2), (x2 + 2, y2 + 2)], fill=(87, 63, 37, random.randint(22, 40)), width=width)
+        # Add short wrinkles to avoid overly uniform long creases.
+        for _ in range(120):
+            x = random.randint(0, w)
+            y = random.randint(0, h)
+            ln = random.randint(26, 90)
+            ang = random.uniform(-math.pi, math.pi)
+            x2 = int(x + math.cos(ang) * ln)
+            y2 = int(y + math.sin(ang) * ln)
+            cd.line([(x, y), (x2, y2)], fill=(248, 236, 210, random.randint(14, 24)), width=1)
+            cd.line([(x + 1, y + 1), (x2 + 1, y2 + 1)], fill=(78, 56, 34, random.randint(12, 20)), width=1)
+        crease = crease.filter(ImageFilter.GaussianBlur(1.8))
 
-        speckles = Image.effect_noise((w, h), 52).convert("L")
+        coarse = Image.effect_noise((w // 2, h // 2), 62).resize((w, h), Image.Resampling.BICUBIC).convert("L")
+        fine = Image.effect_noise((w, h), 28).convert("L")
+        speckles = Image.blend(coarse, fine, 0.35)
         speckles = Image.merge("RGB", (speckles, speckles, speckles))
-        img = ImageChops.blend(img, speckles, 0.10)
+        img = ImageChops.blend(img, speckles, 0.13)
         img = Image.alpha_composite(img.convert("RGBA"), crease).convert("RGB")
-        return PresetGenerator._add_noise(img, 0.04)
+        vignette = Image.new("L", (w, h), 0)
+        vd = ImageDraw.Draw(vignette)
+        vd.ellipse((-w // 6, -h // 6, w + w // 6, h + h // 6), fill=180)
+        vignette = ImageOps.invert(vignette).filter(ImageFilter.GaussianBlur(120))
+        shade = Image.merge("RGBA", (Image.new("L", (w, h), 58), Image.new("L", (w, h), 44), Image.new("L", (w, h), 28), vignette))
+        img = Image.alpha_composite(img.convert("RGBA"), shade).convert("RGB")
+        return PresetGenerator._add_noise(img, 0.05)
+
+    @staticmethod
+    def gen_logo_recycle_leaf():
+        size = 512
+        img = Image.new("RGBA", (size, size), (245, 238, 220, 255))
+        draw = ImageDraw.Draw(img)
+        draw.ellipse((24, 24, size - 24, size - 24), fill=(245, 238, 220, 255))
+        draw.ellipse((46, 46, size - 46, size - 46), outline=(121, 95, 58, 180), width=12)
+
+        center = size // 2
+        r_outer = 148
+        r_inner = 86
+        for i in range(3):
+            a1 = math.radians(120 * i - 18)
+            a2 = math.radians(120 * i + 38)
+            a3 = math.radians(120 * i + 78)
+            p1 = (center + int(r_outer * math.cos(a1)), center + int(r_outer * math.sin(a1)))
+            p2 = (center + int(r_inner * math.cos(a2)), center + int(r_inner * math.sin(a2)))
+            p3 = (center + int(r_outer * math.cos(a3)), center + int(r_outer * math.sin(a3)))
+            draw.polygon([p1, p2, p3], fill=(63, 138, 84, 255))
+
+        draw.ellipse((center - 56, center - 56, center + 56, center + 56), fill=(85, 164, 104, 255))
+        draw.ellipse((center - 20, center - 20, center + 20, center + 20), fill=(245, 238, 220, 255))
+        return _antialias_image(img)
+
+    @staticmethod
+    def gen_logo_soft_sky_badge():
+        size = 512
+        img = Image.new("RGBA", (size, size), (235, 245, 255, 255))
+        draw = ImageDraw.Draw(img)
+        draw.ellipse((22, 22, size - 22, size - 22), fill=(235, 245, 255, 255))
+        draw.ellipse((52, 52, size - 52, size - 52), outline=(142, 181, 222, 210), width=14)
+        cx = cy = size // 2
+        draw.rounded_rectangle((cx - 124, cy - 92, cx + 124, cy + 92), radius=48, fill=(182, 214, 243, 255))
+        draw.rounded_rectangle((cx - 84, cy - 56, cx + 84, cy + 56), radius=34, fill=(246, 251, 255, 255))
+        draw.ellipse((cx - 28, cy - 28, cx + 28, cy + 28), fill=(132, 174, 218, 255))
+        for i in range(12):
+            a = math.radians(i * 30)
+            ox = int(172 * math.cos(a))
+            oy = int(172 * math.sin(a))
+            draw.ellipse((cx + ox - 9, cy + oy - 9, cx + ox + 9, cy + oy + 9), fill=(196, 222, 247, 220))
+        return _antialias_image(img)
+
+    @staticmethod
+    def gen_logo_green_ring():
+        size = 512
+        img = Image.new("RGBA", (size, size), (239, 248, 242, 255))
+        draw = ImageDraw.Draw(img)
+        draw.ellipse((20, 20, size - 20, size - 20), fill=(239, 248, 242, 255))
+        draw.ellipse((46, 46, size - 46, size - 46), outline=(128, 185, 152, 220), width=16)
+        draw.ellipse((112, 112, size - 112, size - 112), outline=(168, 214, 188, 255), width=40)
+
+        cx = cy = size // 2
+        draw.polygon([(cx - 24, cy - 158), (cx + 64, cy - 132), (cx + 8, cy - 82)], fill=(118, 178, 145, 255))
+        draw.polygon([(cx + 160, cy - 24), (cx + 134, cy + 64), (cx + 84, cy + 8)], fill=(118, 178, 145, 255))
+        draw.polygon([(cx + 24, cy + 160), (cx - 64, cy + 134), (cx - 8, cy + 84)], fill=(118, 178, 145, 255))
+        draw.polygon([(cx - 158, cy + 24), (cx - 132, cy - 64), (cx - 82, cy - 8)], fill=(118, 178, 145, 255))
+        return _antialias_image(img)
+
+    @staticmethod
+    def gen_logo_mint_circle():
+        size = 512
+        img = Image.new("RGBA", (size, size), (241, 252, 248, 255))
+        draw = ImageDraw.Draw(img)
+        draw.ellipse((20, 20, size - 20, size - 20), fill=(241, 252, 248, 255))
+        draw.ellipse((46, 46, size - 46, size - 46), outline=(157, 216, 193, 220), width=14)
+        cx = cy = size // 2
+        draw.ellipse((122, 122, size - 122, size - 122), fill=(206, 237, 223, 255))
+        draw.ellipse((172, 172, size - 172, size - 172), fill=(245, 254, 249, 255))
+        for i in range(6):
+            a = math.radians(i * 60)
+            ox = int(112 * math.cos(a))
+            oy = int(112 * math.sin(a))
+            draw.ellipse((cx + ox - 22, cy + oy - 22, cx + ox + 22, cy + oy + 22), fill=(140, 200, 176, 255))
+        draw.ellipse((cx - 26, cy - 26, cx + 26, cy + 26), fill=(120, 186, 160, 255))
+        return _antialias_image(img)
+
+    @staticmethod
+    def get_default_logos(base_dir):
+        with PresetGenerator._lock:
+            cached = dict(PresetGenerator._default_logo_cache)
+        if cached and all(os.path.isfile(path) and os.path.getsize(path) >= 1024 for path in cached.values()):
+            return cached
+
+        presets_dir, _, logos_dir = PresetGenerator._prepare_preset_dirs(base_dir)
+        logos = [
+            ("default_logo_recycle_leaf.png", PresetGenerator.gen_logo_recycle_leaf),
+            ("default_logo_mint_circle.png", PresetGenerator.gen_logo_mint_circle),
+        ]
+        out = {}
+        for filename, fn in logos:
+            path = PresetGenerator._sync_legacy_asset(presets_dir, logos_dir, filename)
+            if not os.path.exists(path) or os.path.getsize(path) < 1024:
+                fn().save(path)
+            out[filename] = path
+        selected_candidates = [
+            "default_logo_candidate_01.png",
+            "default_logo_candidate_02.png",
+            "default_logo_candidate_06.png",
+        ]
+        for filename in selected_candidates:
+            path = PresetGenerator._sync_legacy_asset(presets_dir, logos_dir, filename)
+            if os.path.isfile(path) and os.path.getsize(path) >= 1024:
+                out[filename] = path
+        with PresetGenerator._lock:
+            PresetGenerator._default_logo_cache = dict(out)
+        return dict(out)
 
     @staticmethod
     def get_presets(base_dir):
-        presets_dir = os.path.join(base_dir, "presets")
-        os.makedirs(presets_dir, exist_ok=True)
+        with PresetGenerator._lock:
+            cached = dict(PresetGenerator._cache)
+        if cached and all(os.path.isfile(path) and os.path.getsize(path) >= 1024 for path in cached.values()):
+            return cached
+
+        presets_dir, backgrounds_dir, _ = PresetGenerator._prepare_preset_dirs(base_dir)
         presets = [
             ("preset_luxury_red.png", "鎏金故宫红", PresetGenerator.gen_luxury_red),
             ("preset_fluid_blue.png", "深海流体蓝", PresetGenerator.gen_fluid_blue),
@@ -396,13 +590,13 @@ class PresetGenerator:
         ]
         out = {}
         for filename, name, fn in presets:
-            path = os.path.join(presets_dir, filename)
+            path = PresetGenerator._sync_legacy_asset(presets_dir, backgrounds_dir, filename)
             if not os.path.exists(path) or os.path.getsize(path) < 1024:
                 fn().save(path)
             out[name] = path
         with PresetGenerator._lock:
-            PresetGenerator._cache = out
-        return deepcopy(out)
+            PresetGenerator._cache = dict(out)
+        return dict(out)
 
 
 def format_date_input(value):
@@ -1024,12 +1218,17 @@ def draw_poster(content, date_str, title, cfg):
         logo_size = 198
         logo_half = logo_size // 2
         ring_pad = 6
-        logo = ImageOps.fit(logo, (logo_size, logo_size), method=Image.Resampling.LANCZOS)
-        mask = Image.new("L", (logo_size, logo_size), 0)
-        ImageDraw.Draw(mask).ellipse((0, 0, logo_size, logo_size), fill=255)
+        logo_layer = _rounded_logo_layer(logo, logo_size, factor=4)
         ly, lx = cy + 60, (w - logo_size) // 2
-        draw.ellipse((lx - ring_pad, int(ly - logo_half) - ring_pad, lx + logo_size + ring_pad, int(ly + logo_half) + ring_pad), fill="white")
-        img.paste(logo, (lx, int(ly - logo_half)), mask)
+        ring_size = logo_size + ring_pad * 2
+        ring_x = lx - ring_pad
+        ring_y = int(ly - logo_half) - ring_pad
+
+        ring_mask = _aa_circle_mask(ring_size)
+        ring = Image.new("RGBA", (ring_size, ring_size), (255, 255, 255, 0))
+        ring.putalpha(ring_mask)
+        img.alpha_composite(ring, (ring_x, ring_y))
+        img.alpha_composite(logo_layer, (lx, int(ly - logo_half)))
 
     cur = cy + 190
     draw.text((w // 2, cur), title or "调价通知", font=get_font(75, True), fill=("#F5F7FB" if is_dark_style else "black"), anchor="mt")

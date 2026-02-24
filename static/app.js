@@ -23,13 +23,22 @@ const UPLOAD_PREVIEW_FIELDS = [
   { key: "qrcode_image_path", thumbId: "qrThumb", wrapId: "qrThumbWrap", removeBtnId: "qrThumbRemoveBtn", uploadInputId: "qrUpload", label: "二维码" },
 ];
 const AVAILABLE_CARD_STYLES = new Set(["single", "stack", "block", "flip", "ticket", "double", "aurora", "paper_relief"]);
+const LEGACY_CARD_STYLE_MAP = Object.freeze({
+  soft: "single",
+  outline_pro: "single",
+  outline: "single",
+  fold: "single",
+  sidebar: "single",
+  ink: "single",
+  neon: "single",
+});
 const BG_VARIANTS = ["bg-variant-a", "bg-variant-b", "bg-variant-c", "bg-variant-d", "bg-variant-e"];
 const MAX_UPLOAD_MB = 15;
 const GUEST_DRAFT_STORAGE_KEY = "poster_guest_draft_v1";
 const GUEST_DRAFT_SCHEMA_VERSION = 1;
 const GUEST_DRAFT_EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
 const SETTINGS_TIP_SEEN_KEY = "poster_settings_tip_seen_v1";
-const TEMPLATE_MANAGER_TIP_SEEN_KEY = "poster_template_manager_tip_seen_v2";
+const TEMPLATE_MANAGER_TIP_SEEN_KEY = "poster_template_manager_tip_seen_v3";
 const PRICE_LINE_PATTERN = /^\s*【([^】]+)】\s*[：:]\s*(.+?)\s*$/;
 const PRICE_UNIT_DEFAULT = "元/吨";
 const DIALOG_EMPTY = () => { };
@@ -139,6 +148,11 @@ function syncRangeValue(inputId) {
 
 function syncAllRangeValues() {
   RANGE_VALUE_FIELDS.forEach((field) => syncRangeValue(field.inputId));
+}
+
+function normalizeCardStyle(style) {
+  const savedStyle = LEGACY_CARD_STYLE_MAP[style] || style || "single";
+  return AVAILABLE_CARD_STYLES.has(savedStyle) ? savedStyle : "single";
 }
 
 async function api(url, method = "GET", body = null) {
@@ -574,13 +588,20 @@ function syncTemplateManagerCollapseUi() {
   if (!card || !toggleBtn || !tip) return;
   const bodyBlocks = card.querySelectorAll(".template-manager-body");
   if (!card.dataset.collapseInited) {
-    card.classList.add("is-collapsed");
+    const firstUse = !hasSeenTemplateManagerTip();
+    card.classList.toggle("is-collapsed", !firstUse);
     card.dataset.collapseInited = "1";
     window.requestAnimationFrame(() => {
       card.classList.add("is-ready");
     });
   }
   const collapsed = card.classList.contains("is-collapsed");
+  const tipText = tip.querySelector("p");
+  if (tipText) {
+    tipText.textContent = collapsed
+      ? "点击展开模板切换、管理与导出格式设置"
+      : "这里可以收起模板管理模块，聚焦主编辑区";
+  }
   toggleBtn.hidden = false;
   toggleBtn.textContent = collapsed ? "展开" : "收起";
   toggleBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
@@ -590,7 +611,7 @@ function syncTemplateManagerCollapseUi() {
       el.inert = collapsed;
     }
   });
-  if (!collapsed || hasSeenTemplateManagerTip()) {
+  if (hasSeenTemplateManagerTip()) {
     clearTemplateManagerTipAutoHide();
     tip.hidden = true;
     tip.classList.remove("is-fading");
@@ -1131,9 +1152,7 @@ function restoreSettingsSnapshot() {
   settingsConfigSnapshot = null;
   $("themeColor").value = cfg.theme_color || "#B22222";
   syncThemeColorUi($("themeColor").value);
-  const legacyMap = { soft: "single", outline_pro: "single", outline: "single", fold: "single", sidebar: "single", ink: "single", neon: "single" };
-  const savedStyle = legacyMap[cfg.card_style] || cfg.card_style || "single";
-  $("cardStyle").value = AVAILABLE_CARD_STYLES.has(savedStyle) ? savedStyle : "single";
+  $("cardStyle").value = normalizeCardStyle(cfg.card_style);
   $("priceColorMode").value = cfg.price_color_mode || "semantic";
   $("shopName").value = cfg.shop_name || "";
   $("phone").value = cfg.phone || "";
@@ -1212,9 +1231,7 @@ function bindFromConfig(cfg) {
 
   $("themeColor").value = cfg.theme_color || "#B22222";
   syncThemeColorUi($("themeColor").value);
-  const legacyStyleMap = { soft: "single", outline_pro: "single", outline: "single", fold: "single", sidebar: "single", ink: "single", neon: "single" };
-  const savedCardStyle = legacyStyleMap[cfg.card_style] || cfg.card_style || "single";
-  $("cardStyle").value = AVAILABLE_CARD_STYLES.has(savedCardStyle) ? savedCardStyle : "single";
+  $("cardStyle").value = normalizeCardStyle(cfg.card_style);
   $("priceColorMode").value = cfg.price_color_mode || "semantic";
   $("shopName").value = cfg.shop_name || "";
   $("phone").value = cfg.phone || "";
@@ -2537,6 +2554,7 @@ async function init() {
     const card = $("templateManagerCard");
     if (!card) return;
     card.classList.toggle("is-collapsed");
+    markTemplateManagerTipSeen();
     syncTemplateManagerCollapseUi();
   });
   $("templateManagerTipAcknowledgeBtn").addEventListener("click", (e) => {
@@ -2783,8 +2801,8 @@ async function init() {
         window.open(downloadUrl, "_blank");
       }
       vibrate(30);
-      showToast(`✅ 已下载：${d.name || "海报"}`);
-      $("statusText").textContent = withGuestHint(`已生成 ${d.name}`);
+      showToast("已下载");
+      $("statusText").textContent = "已生成";
       setButtonBusy(btn, false);
       btn.textContent = "✓ 已下载";
       btn.classList.add("is-success");
