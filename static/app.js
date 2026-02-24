@@ -32,21 +32,25 @@ const SETTINGS_TIP_SEEN_KEY = "poster_settings_tip_seen_v1";
 const TEMPLATE_MANAGER_TIP_SEEN_KEY = "poster_template_manager_tip_seen_v2";
 const PRICE_LINE_PATTERN = /^\s*【([^】]+)】\s*[：:]\s*(.+?)\s*$/;
 const PRICE_UNIT_DEFAULT = "元/吨";
-const DIALOG_EMPTY = () => {};
+const DIALOG_EMPTY = () => { };
 const MOBILE_DOUBLE_TAP_INTERVAL_MS = 320;
 const MOBILE_DOUBLE_TAP_MAX_MOVE_PX = 24;
 const PRICE_SORT_TOUCH_DELAY_MS = 140;
+const PREVIEW_SLOW_HINT_DELAY_MS = 2500;
+const PREVIEW_SLOW_HINT_TEXT = "网络较慢，已进入后台加载，不影响后续操作";
 let templateManagerTipHideTimer = 0;
 let templateManagerTipFadeTimer = 0;
 let mobilePreviewLastTapAt = 0;
 let mobilePreviewLastTapPos = null;
 let previewFocusToastTimer = 0;
+let previewSlowHintTimer = 0;
 let activeSettingsTab = "base";
 let settingsTabsLastScrollTop = 0;
 let settingsTabsAutoHidden = false;
 let settingsTabsScrollDownAcc = 0;
 let settingsTabsScrollUpAcc = 0;
 let settingsTabsToggleLockUntil = 0;
+let settingsConfigSnapshot = null;
 const SETTINGS_TABS_MIN_DELTA = 2;
 const SETTINGS_TABS_HIDE_SCROLL_PX = 56;
 const SETTINGS_TABS_SHOW_SCROLL_PX = 36;
@@ -80,7 +84,7 @@ function toDayKey(date = new Date()) {
 function normalizeDateInputForRollover(raw, baseDate = new Date()) {
   const text = String(raw || "").trim();
   if (!text) return { shouldRefresh: false, value: text };
-  
+
   if (text === toDateTextByOffset(-1, baseDate)) return { shouldRefresh: true, value: toDateTextByOffset(0, baseDate) };
   if (text === toDateTextByOffset(0, baseDate)) return { shouldRefresh: true, value: toDateTextByOffset(1, baseDate) };
   if (text === toDateTextByOffset(1, baseDate)) return { shouldRefresh: true, value: toDateTextByOffset(2, baseDate) };
@@ -298,13 +302,17 @@ async function copyTextToClipboard(text) {
   return copied;
 }
 
-async function openCopyTextDialog(text) {
+async function openCopyTextDialog(text, showRegisterTip = false) {
+  const regTipHtml = showRegisterTip
+    ? `<p class="copy-dialog-reg-tip">💡 建议注册一个用户，可以保存设置和内容，下次直接继续使用。</p>`
+    : "";
   const messageHtml = `
     <span class="copy-dialog-tip">已为你准备好本次生成文案，可直接复制：</span>
     <textarea id="copyTextDialogInput" class="copy-dialog-text" rows="8" readonly></textarea>
     <span class="copy-dialog-row">
       <button id="copyTextDialogBtn" class="mini-btn" type="button">复制文案</button>
     </span>
+    ${regTipHtml}
   `;
   const dialogPromise = openDialog({
     mode: "alert",
@@ -393,7 +401,7 @@ function showToast(message, duration = 3000) {
 
 function vibrate(pattern = 10) {
   if (typeof navigator !== "undefined" && navigator.vibrate) {
-    try { navigator.vibrate(pattern); } catch (_) {}
+    try { navigator.vibrate(pattern); } catch (_) { }
   }
 }
 
@@ -460,7 +468,7 @@ async function handleSettingsMenuAuthAction() {
   try {
     state.config = buildConfigPayloadForSave();
     await api("/api/config", "POST", state.config);
-  } catch (_) {}
+  } catch (_) { }
   try {
     await api("/api/logout", "POST");
     location.reload();
@@ -523,7 +531,7 @@ async function enterDesktopPreviewFocus() {
       card.webkitRequestFullscreen();
       return;
     }
-  } catch (_) {}
+  } catch (_) { }
   document.body.classList.add("is-desktop-preview-focus");
 }
 
@@ -539,7 +547,7 @@ async function exitDesktopPreviewFocus() {
       if (document.webkitExitFullscreen) {
         document.webkitExitFullscreen();
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 }
 
@@ -629,7 +637,7 @@ function hasSeenTemplateManagerTip() {
 function markTemplateManagerTipSeen() {
   try {
     localStorage.setItem(TEMPLATE_MANAGER_TIP_SEEN_KEY, "1");
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function syncPreviewFocusUi() {
@@ -680,6 +688,13 @@ async function togglePreviewFocus(force) {
   syncPreviewFocusUi();
   syncTopbarCompactOnScroll();
   syncFooterNoteVisibility();
+
+  // 进入全屏时显示退出提示，退出时隐藏
+  if (shouldEnter) {
+    showFullscreenExitHint();
+  } else {
+    hideFullscreenExitHint();
+  }
 }
 
 async function onPreviewStageTouchEnd(e) {
@@ -724,6 +739,38 @@ function showPreviewFocusToast(text) {
   }, 840);
 }
 
+let fullscreenExitHintTimer = 0;
+
+function showFullscreenExitHint() {
+  const hint = $("fullscreenExitHint");
+  if (!hint) return;
+  if (fullscreenExitHintTimer) {
+    window.clearTimeout(fullscreenExitHintTimer);
+    fullscreenExitHintTimer = 0;
+  }
+  hint.hidden = false;
+  hint.classList.remove("is-visible");
+  void hint.offsetWidth;
+  hint.classList.add("is-visible");
+  // 动画时长 3.2s，动画结束后隐藏
+  fullscreenExitHintTimer = window.setTimeout(() => {
+    hint.hidden = true;
+    hint.classList.remove("is-visible");
+    fullscreenExitHintTimer = 0;
+  }, 3300);
+}
+
+function hideFullscreenExitHint() {
+  const hint = $("fullscreenExitHint");
+  if (!hint) return;
+  if (fullscreenExitHintTimer) {
+    window.clearTimeout(fullscreenExitHintTimer);
+    fullscreenExitHintTimer = 0;
+  }
+  hint.hidden = true;
+  hint.classList.remove("is-visible");
+}
+
 function hasSeenSettingsTip() {
   try {
     return localStorage.getItem(SETTINGS_TIP_SEEN_KEY) === "1";
@@ -735,7 +782,7 @@ function hasSeenSettingsTip() {
 function markSettingsTipSeen() {
   try {
     localStorage.setItem(SETTINGS_TIP_SEEN_KEY, "1");
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function showSettingsFirstUseTip() {
@@ -871,7 +918,7 @@ function getGuestDraftEnvelope() {
     }
     return parsed;
   } catch (_) {
-    try { localStorage.removeItem(GUEST_DRAFT_STORAGE_KEY); } catch (_) {}
+    try { localStorage.removeItem(GUEST_DRAFT_STORAGE_KEY); } catch (_) { }
     return null;
   }
 }
@@ -888,7 +935,7 @@ function readGuestDraft() {
 function clearGuestDraft(silent = false) {
   try {
     localStorage.removeItem(GUEST_DRAFT_STORAGE_KEY);
-  } catch (_) {}
+  } catch (_) { }
   syncSettingsMenuUi();
   if (!silent) {
     const statusText = $("statusText");
@@ -906,7 +953,7 @@ function saveGuestDraft() {
     };
     localStorage.setItem(GUEST_DRAFT_STORAGE_KEY, JSON.stringify(payload));
     syncSettingsMenuUi();
-  } catch (_) {}
+  } catch (_) { }
 }
 
 async function ensureLogin() {
@@ -1004,7 +1051,7 @@ function handleSettingsBodyScroll() {
 function renderPresetGrid() {
   const grid = $("presetGrid");
   if (!grid) return;
-  
+
   const currentPath = state.config.bg_image_path || "";
   const isPresetMode = state.config.bg_mode === "preset";
 
@@ -1024,7 +1071,7 @@ function renderPresetGrid() {
     item.onclick = async () => {
       const path = item.dataset.path;
       grid.querySelectorAll(".preset-item").forEach(el => el.classList.toggle("is-active", el === item));
-      
+
       if (!path) {
         state.config.bg_mode = "custom";
         state.config.bg_image_path = "";
@@ -1032,7 +1079,7 @@ function renderPresetGrid() {
         state.config.bg_mode = "preset";
         state.config.bg_image_path = path;
       }
-      
+
       saveGuestDraft();
       await refreshPreview();
     };
@@ -1054,6 +1101,7 @@ function syncSettingsPaneHeight() {
 
 function openSettingsModal() {
   closeSettingsMenu();
+  settingsConfigSnapshot = JSON.parse(JSON.stringify(formConfig()));
   $("settingsModal").classList.remove("hidden");
   document.body.classList.add("no-scroll");
   switchSettingsTab("base");
@@ -1067,6 +1115,7 @@ function openSettingsModal() {
 
 function closeSettingsModal() {
   $("settingsModal").classList.add("hidden");
+  settingsConfigSnapshot = null;
   settingsTabsScrollDownAcc = 0;
   settingsTabsScrollUpAcc = 0;
   settingsTabsToggleLockUntil = 0;
@@ -1074,6 +1123,38 @@ function closeSettingsModal() {
   if (!hasAnyModalOpen()) {
     document.body.classList.remove("no-scroll");
   }
+}
+
+function restoreSettingsSnapshot() {
+  if (!settingsConfigSnapshot) return;
+  const cfg = settingsConfigSnapshot;
+  settingsConfigSnapshot = null;
+  $("themeColor").value = cfg.theme_color || "#B22222";
+  syncThemeColorUi($("themeColor").value);
+  const legacyMap = { soft: "single", outline_pro: "single", outline: "single", fold: "single", sidebar: "single", ink: "single", neon: "single" };
+  const savedStyle = legacyMap[cfg.card_style] || cfg.card_style || "single";
+  $("cardStyle").value = AVAILABLE_CARD_STYLES.has(savedStyle) ? savedStyle : "single";
+  $("priceColorMode").value = cfg.price_color_mode || "semantic";
+  $("shopName").value = cfg.shop_name || "";
+  $("phone").value = cfg.phone || "";
+  $("address").value = cfg.address || "";
+  $("slogan").value = cfg.slogan || "";
+  $("bgBlur").value = cfg.bg_blur_radius ?? 0;
+  $("bgBrightness").value = cfg.bg_brightness ?? 1.0;
+  $("cardOpacity").value = cfg.card_opacity ?? 1.0;
+  $("stampOpacity").value = cfg.stamp_opacity ?? 0.85;
+  $("watermarkEnabled").checked = !!cfg.watermark_enabled;
+  $("watermarkText").value = cfg.watermark_text || "";
+  $("watermarkOpacity").value = cfg.watermark_opacity ?? 0.15;
+  $("watermarkDensity").value = cfg.watermark_density ?? 1.0;
+  $("exportFormat").value = cfg.export_format || "PNG";
+  ["bg_image_path", "bg_mode", "logo_image_path", "stamp_image_path", "qrcode_image_path"].forEach((k) => {
+    if (cfg[k] !== undefined) state.config[k] = cfg[k];
+  });
+  syncAllRangeValues();
+  syncUploadThumbsFromConfig(cfg);
+  renderPresetGrid();
+  refreshPreview().catch(() => { });
 }
 
 function setLoginError(msg = "") {
@@ -1942,12 +2023,31 @@ function setPreviewLoaded() {
   $("previewStage").classList.add("is-loaded");
 }
 
+function clearPreviewSlowHintTimer() {
+  if (previewSlowHintTimer) {
+    clearTimeout(previewSlowHintTimer);
+    previewSlowHintTimer = 0;
+  }
+}
+
+function startPreviewSlowHintTimer(seq) {
+  clearPreviewSlowHintTimer();
+  previewSlowHintTimer = setTimeout(() => {
+    previewSlowHintTimer = 0;
+    if (seq !== state.previewSeq) return;
+    $("statusText").textContent = PREVIEW_SLOW_HINT_TEXT;
+    const textEl = document.querySelector(".preview-loading-text");
+    if (textEl) textEl.textContent = PREVIEW_SLOW_HINT_TEXT;
+  }, PREVIEW_SLOW_HINT_DELAY_MS);
+}
+
 async function refreshPreview() {
   const seq = ++state.previewSeq;
-  $("statusText").textContent = "生成预览中...";
+  $("statusText").textContent = "正在生成预览...";
   if (!$("previewImage").src) {
     setPreviewLoading("正在生成预览...");
   }
+  startPreviewSlowHintTimer(seq);
   const payload = {
     title: $("titleInput").value.trim(),
     date: $("dateInput").value.trim(),
@@ -1965,12 +2065,14 @@ async function refreshPreview() {
       const preload = new Image();
       preload.onload = () => {
         if (seq !== state.previewSeq) return;
+        clearPreviewSlowHintTimer();
         $("previewImage").src = preload.src;
         setPreviewLoaded();
         $("statusText").textContent = !data.valid && data.warnings.length ? data.warnings[0] : "预览已更新";
       };
       preload.onerror = () => {
         if (seq !== state.previewSeq) return;
+        clearPreviewSlowHintTimer();
         if (retriesLeft > 0 && !/^data:/i.test(source)) {
           const nextSrc = `${source}${source.includes("?") ? "&" : "?"}_retry=${Date.now()}`;
           preload.src = nextSrc;
@@ -1994,6 +2096,7 @@ async function refreshPreview() {
     loadPreviewWithRetry(primaryPreviewSrc, 1, true);
   } catch (e) {
     if (seq !== state.previewSeq) return;
+    clearPreviewSlowHintTimer();
     if (!$("previewImage").src) {
       setPreviewLoading("预览生成失败");
     }
@@ -2026,9 +2129,12 @@ async function init() {
   await ensureLogin();
   bindLogoCropDrag();
   bindPinchZoom();
-  setPreviewLoading("正在生成预览...");
+  $("statusText").textContent = "正在加载配置...";
+  setPreviewLoading("正在加载配置...");
 
   const data = await api("/api/init");
+  $("statusText").textContent = "正在准备模板...";
+  setPreviewLoading("正在准备模板...");
   const remoteConfig = data.config || {};
   const guestDraft = readGuestDraft();
   state.config = state.isGuest && guestDraft ? { ...remoteConfig, ...guestDraft } : remoteConfig;
@@ -2064,17 +2170,17 @@ async function init() {
         if (!isMobileLayout()) {
           syncDesktopPriceInputsToState();
         }
-        
+
         // 2. Perform the array move on the state object
         const [movedItem] = state.priceEditorRows.splice(oldIndex, 1);
         state.priceEditorRows.splice(newIndex, 0, movedItem);
-        
+
         // 3. Immediately update hidden content (the source of truth for stats/preview)
         $("contentInput").value = buildContentFromPriceEditor(state.priceEditorRows, $("priceEditorExtra").value);
-        
+
         // 4. Force a clean re-render to ensure DOM data-row-index is perfectly in sync
         renderPriceEditorTable();
-        
+
         // 5. Update stats and refresh preview
         updateStats();
         onType();
@@ -2162,7 +2268,7 @@ async function init() {
     closeSettingsMenu();
   });
   $("closeSettingsBtn").addEventListener("click", closeSettingsModal);
-  $("closeSettingsBtn2").addEventListener("click", closeSettingsModal);
+  $("closeSettingsBtn2").addEventListener("click", () => { restoreSettingsSnapshot(); closeSettingsModal(); });
   $("settingsMask").addEventListener("click", closeSettingsModal);
   $("closeLoginBtn").addEventListener("click", closeLoginModal);
   $("cancelLoginBtn").addEventListener("click", closeLoginModal);
@@ -2210,6 +2316,15 @@ async function init() {
     renderPriceEditorTable();
     syncHiddenContentFromMainPriceEditor();
     onType();
+    const tbody = $("priceTableBody");
+    if (tbody) {
+      const lastRow = tbody.querySelector("tr:last-child");
+      if (lastRow) {
+        requestAnimationFrame(() => {
+          lastRow.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        });
+      }
+    }
   });
   $("closePriceDrawerBtn").addEventListener("click", closePriceRowDrawer);
   $("cancelPriceDrawerBtn").addEventListener("click", closePriceRowDrawer);
@@ -2391,14 +2506,14 @@ async function init() {
   window.addEventListener("scroll", syncTopbarCompactOnScroll, { passive: true });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
-      checkDateRolloverAndRefresh().catch(() => {});
+      checkDateRolloverAndRefresh().catch(() => { });
     }
   });
   window.addEventListener("focus", () => {
-    checkDateRolloverAndRefresh().catch(() => {});
+    checkDateRolloverAndRefresh().catch(() => { });
   });
   window.setInterval(() => {
-    checkDateRolloverAndRefresh().catch(() => {});
+    checkDateRolloverAndRefresh().catch(() => { });
   }, 30 * 1000);
   document.addEventListener("fullscreenchange", syncPreviewFocusUi);
   document.addEventListener("webkitfullscreenchange", syncPreviewFocusUi);
@@ -2492,12 +2607,22 @@ async function init() {
 
   $("formatBtn").addEventListener("click", async () => {
     try {
-      const d = await api("/api/format", "POST", { content: $("contentInput").value });
+      const beforeContent = $("contentInput").value;
+      const beforeLines = (beforeContent || "").split("\n").filter((x) => x.trim()).length;
+      const d = await api("/api/format", "POST", { content: beforeContent });
       $("contentInput").value = d.content;
       syncMainPriceEditorFromContent();
       updateStats();
       saveGuestDraft();
       await refreshPreview();
+      if (d.content === beforeContent) {
+        showToast("内容已是标准格式，无需调整");
+      } else {
+        const afterLines = (d.content || "").split("\n").filter((x) => x.trim()).length;
+        const diff = afterLines - beforeLines;
+        const diffText = diff === 0 ? "" : diff > 0 ? `，增加了 ${diff} 行` : `，减少了 ${-diff} 行`;
+        showToast(`格式化完成${diffText}`);
+      }
     } catch (e) {
       showStatusError(e.message || "自动格式化失败");
     }
@@ -2658,12 +2783,18 @@ async function init() {
         window.open(downloadUrl, "_blank");
       }
       vibrate(30);
+      showToast(`✅ 已下载：${d.name || "海报"}`);
       $("statusText").textContent = withGuestHint(`已生成 ${d.name}`);
-      await openCopyTextDialog(buildCopyTextForGeneratedPoster());
-      if (state.isGuest && !state.guestRegisterTipShown) {
-        state.guestRegisterTipShown = true;
-        await appAlert("已生成成功。建议注册一个用户：可以保存设置和内容，下次可直接继续使用。", "提示");
-      }
+      setButtonBusy(btn, false);
+      btn.textContent = "✓ 已下载";
+      btn.classList.add("is-success");
+      setTimeout(() => {
+        btn.textContent = btn.dataset.originText || "生成";
+        btn.classList.remove("is-success");
+      }, 2000);
+      const showRegTip = state.isGuest && !state.guestRegisterTipShown;
+      if (showRegTip) state.guestRegisterTipShown = true;
+      await openCopyTextDialog(buildCopyTextForGeneratedPoster(), showRegTip);
     } catch (e) {
       showStatusError(e.message || "生成失败");
     } finally {
@@ -2678,6 +2809,47 @@ async function init() {
   syncTopbarCompactOnScroll();
   syncTemplateManagerCollapseUi();
   showSettingsFirstUseTip();
+
+  // 日期输入跨浏览器处理
+  const dateTextInput = $("dateInput");
+  const datePickerInput = $("dateInputPicker");
+  const dateIconBtn = $("dateInputIconBtn");
+  if (dateTextInput && datePickerInput && dateIconBtn) {
+    // 图标按钮点击 → 尝试 showPicker，否则 focus 文本框
+    dateIconBtn.addEventListener("click", () => {
+      if (datePickerInput.showPicker) {
+        datePickerInput.value = dateTextInput.value.trim() || toDayKey(new Date());
+        try { datePickerInput.showPicker(); } catch (_) { dateTextInput.focus(); }
+      } else {
+        dateTextInput.focus();
+      }
+    });
+    // 原生 picker 选完后同步回文本框
+    datePickerInput.addEventListener("change", () => {
+      if (datePickerInput.value) {
+        dateTextInput.value = datePickerInput.value;
+        dateTextInput.classList.remove("is-invalid");
+        dateTextInput.dispatchEvent(new Event("input", { bubbles: true }));
+        saveGuestDraft();
+        refreshPreview().catch(() => { });
+      }
+    });
+    // 文本输入时自动格式化 8 位数字 → YYYY-MM-DD
+    dateTextInput.addEventListener("input", () => {
+      const raw = dateTextInput.value.replace(/[-/]/g, "");
+      if (/^\d{8}$/.test(raw)) {
+        dateTextInput.value = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+      }
+      dateTextInput.classList.remove("is-invalid");
+    });
+    // 失焦时验证格式
+    dateTextInput.addEventListener("blur", () => {
+      const v = dateTextInput.value.trim();
+      if (!v) { dateTextInput.classList.remove("is-invalid"); return; }
+      const isValid = /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(v).getTime());
+      dateTextInput.classList.toggle("is-invalid", !isValid);
+    });
+  }
 }
 
 init().catch((e) => {

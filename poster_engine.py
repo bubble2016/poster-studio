@@ -1,6 +1,7 @@
 ﻿import datetime
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -318,75 +319,67 @@ class PresetGenerator:
         return PresetGenerator._add_noise(img, 0.045)
 
     @staticmethod
-    def gen_sunset_amber():
+    def gen_recycled_paper():
         w, h = CANVAS_SIZE
-        top = (255, 236, 198)
-        mid = (255, 173, 116)
-        bottom = (127, 79, 198)
-        img = Image.new("RGB", (w, h), top)
+        base = Image.new("RGB", (w, h), "#C7B190")
+        paper_noise = Image.effect_noise((w, h), 36).convert("L")
+        grain = Image.merge("RGB", (paper_noise, paper_noise, paper_noise))
+        img = ImageChops.blend(base, grain, 0.14)
         draw = ImageDraw.Draw(img)
-        for y in range(h):
-            t = y / max(1, h - 1)
-            if t < 0.55:
-                s = t / 0.55
-                r = int(top[0] + (mid[0] - top[0]) * s)
-                g = int(top[1] + (mid[1] - top[1]) * s)
-                b = int(top[2] + (mid[2] - top[2]) * s)
-            else:
-                s = (t - 0.55) / 0.45
-                r = int(mid[0] + (bottom[0] - mid[0]) * s)
-                g = int(mid[1] + (bottom[1] - mid[1]) * s)
-                b = int(mid[2] + (bottom[2] - mid[2]) * s)
-            draw.line([(0, y), (w, y)], fill=(r, g, b))
-
-        haze = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        hd = ImageDraw.Draw(haze)
-        for _ in range(10):
-            rx = random.randint(-120, w + 120)
+        # Simulate irregular recycled fibers.
+        for _ in range(2600):
+            x = random.randint(0, w - 1)
+            y = random.randint(0, h - 1)
+            ln = random.randint(3, 11)
+            ang = random.random() * math.pi
+            x2 = int(x + math.cos(ang) * ln)
+            y2 = int(y + math.sin(ang) * ln)
+            col = random.choice([(130, 111, 84, 30), (156, 138, 112, 26), (103, 88, 67, 24)])
+            draw.line([(x, y), (x2, y2)], fill=col, width=1)
+        # Add random subtle stains.
+        stain = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        sd = ImageDraw.Draw(stain)
+        for _ in range(24):
+            rx = random.randint(-80, w + 80)
             ry = random.randint(-80, h + 80)
-            rr = random.randint(180, 360)
-            col = random.choice([(255, 255, 255, 30), (255, 224, 186, 40), (244, 170, 255, 28)])
-            hd.ellipse((rx - rr, ry - rr, rx + rr, ry + rr), fill=col)
-        haze = haze.filter(ImageFilter.GaussianBlur(30))
-        img = Image.alpha_composite(img.convert("RGBA"), haze).convert("RGB")
-        return PresetGenerator._add_noise(img, 0.035)
+            rr = random.randint(80, 220)
+            alpha = random.randint(10, 24)
+            sd.ellipse((rx - rr, ry - rr, rx + rr, ry + rr), fill=(95, 75, 48, alpha))
+        stain = stain.filter(ImageFilter.GaussianBlur(24))
+        img = Image.alpha_composite(img.convert("RGBA"), stain).convert("RGB")
+        return PresetGenerator._add_noise(img, 0.045)
 
     @staticmethod
-    def gen_noir_depth():
+    def gen_crumpled_kraft():
         w, h = CANVAS_SIZE
-        base_top = (14, 18, 24)
-        base_bottom = (5, 7, 10)
-        img = Image.new("RGB", (w, h), base_top)
+        img = Image.new("RGB", (w, h), "#B7966F")
         draw = ImageDraw.Draw(img)
+        # Vertical warm gradient for kraft paper depth.
         for y in range(h):
             t = y / max(1, h - 1)
-            r = int(base_top[0] + (base_bottom[0] - base_top[0]) * t)
-            g = int(base_top[1] + (base_bottom[1] - base_top[1]) * t)
-            b = int(base_top[2] + (base_bottom[2] - base_top[2]) * t)
-            draw.line([(0, y), (w, y)], fill=(r, g, b))
+            base_r = int(183 + (150 - 183) * t)
+            base_g = int(150 + (120 - 150) * t)
+            base_b = int(111 + (92 - 111) * t)
+            draw.line([(0, y), (w, y)], fill=(base_r, base_g, base_b))
 
-        glow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        gd = ImageDraw.Draw(glow)
-        gd.ellipse((int(-w * 0.2), int(h * 0.05), int(w * 0.62), int(h * 0.9)), fill=(64, 96, 132, 66))
-        gd.ellipse((int(w * 0.42), int(-h * 0.18), int(w * 1.2), int(h * 0.62)), fill=(52, 72, 102, 54))
-        for _ in range(18):
-            x = random.randint(-200, w + 120)
-            y = random.randint(0, h)
-            ln = random.randint(280, 640)
-            gd.line([(x, y), (x + ln, y + random.randint(-38, 38))], fill=(190, 210, 235, random.randint(8, 18)), width=1)
-        glow = glow.filter(ImageFilter.GaussianBlur(18))
+        # Crease lines: alternating highlights and shadows to mimic crumpled paper.
+        crease = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        cd = ImageDraw.Draw(crease)
+        for _ in range(34):
+            x1 = random.randint(-160, w + 80)
+            y1 = random.randint(0, h)
+            x2 = x1 + random.randint(280, 760)
+            y2 = y1 + random.randint(-120, 120)
+            width = random.randint(1, 3)
+            cd.line([(x1, y1), (x2, y2)], fill=(255, 244, 220, random.randint(22, 36)), width=width)
+            cd.line([(x1 + 2, y1 + 2), (x2 + 2, y2 + 2)], fill=(87, 63, 37, random.randint(18, 32)), width=width)
+        crease = crease.filter(ImageFilter.GaussianBlur(1.6))
 
-        vignette = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        vd = ImageDraw.Draw(vignette)
-        vd.rectangle((0, 0, w, h), fill=(0, 0, 0, 46))
-        for i in range(56):
-            a = int(3 + i * 1.25)
-            vd.rounded_rectangle([(i * 8, i * 8), (w - i * 8, h - i * 8)], radius=120, outline=(0, 0, 0, min(150, a)), width=2)
-        vignette = vignette.filter(ImageFilter.GaussianBlur(14))
-
-        img = Image.alpha_composite(img.convert("RGBA"), glow)
-        img = Image.alpha_composite(img, vignette).convert("RGB")
-        return PresetGenerator._add_noise(img, 0.05)
+        speckles = Image.effect_noise((w, h), 52).convert("L")
+        speckles = Image.merge("RGB", (speckles, speckles, speckles))
+        img = ImageChops.blend(img, speckles, 0.10)
+        img = Image.alpha_composite(img.convert("RGBA"), crease).convert("RGB")
+        return PresetGenerator._add_noise(img, 0.04)
 
     @staticmethod
     def get_presets(base_dir):
@@ -397,8 +390,8 @@ class PresetGenerator:
             ("preset_fluid_blue.png", "深海流体蓝", PresetGenerator.gen_fluid_blue),
             ("preset_misty_green.png", "晨雾森林绿", PresetGenerator.gen_misty_green),
             ("preset_neon_city.png", "霓虹赛博夜", PresetGenerator.gen_neon_city),
-            ("preset_sunset_amber.png", "落日琥珀橙", PresetGenerator.gen_sunset_amber),
-            ("preset_noir_depth.png", "深空曜黑", PresetGenerator.gen_noir_depth),
+            ("preset_recycled_paper.png", "再生纸纤维", PresetGenerator.gen_recycled_paper),
+            ("preset_crumpled_kraft.png", "揉皱牛皮纸", PresetGenerator.gen_crumpled_kraft),
             ("preset_aurora_cyan.png", "极光青域", PresetGenerator.gen_aurora_cyan),
         ]
         out = {}

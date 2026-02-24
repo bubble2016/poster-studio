@@ -1,4 +1,9 @@
 ﻿const TOKEN_KEY = "poster_admin_token_v1";
+const DIALOG_EMPTY = () => {};
+const dialogState = {
+  resolver: DIALOG_EMPTY,
+  mode: "alert",
+};
 
 function $(id) {
   return document.getElementById(id);
@@ -21,6 +26,77 @@ function saveToken(token) {
 
 function loadToken() {
   $("tokenInput").value = localStorage.getItem(TOKEN_KEY) || "";
+}
+
+function openDialog(options = {}) {
+  const modal = $("adminDialogModal");
+  const title = $("adminDialogTitle");
+  const message = $("adminDialogMessage");
+  const input = $("adminDialogInput");
+  const confirmBtn = $("adminDialogConfirmBtn");
+  const cancelBtn = $("adminDialogCancelBtn");
+  if (!modal || !title || !message || !input || !confirmBtn || !cancelBtn) {
+    return Promise.resolve(null);
+  }
+
+  const mode = options.mode || "alert";
+  dialogState.mode = mode;
+  title.textContent = options.title || "提示";
+  message.textContent = options.message || "";
+  confirmBtn.textContent = options.confirmText || "确定";
+  cancelBtn.textContent = options.cancelText || "取消";
+  cancelBtn.hidden = mode === "alert";
+  input.hidden = mode !== "prompt";
+  input.value = options.defaultValue || "";
+  input.placeholder = options.placeholder || "";
+
+  modal.classList.remove("hidden");
+  document.body.classList.add("no-scroll");
+
+  if (mode === "prompt") {
+    setTimeout(() => input.focus(), 0);
+  } else {
+    setTimeout(() => confirmBtn.focus(), 0);
+  }
+
+  return new Promise((resolve) => {
+    dialogState.resolver = resolve;
+  });
+}
+
+function closeDialog(result = null) {
+  const modal = $("adminDialogModal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  modal.classList.add("hidden");
+  document.body.classList.remove("no-scroll");
+  const resolve = dialogState.resolver || DIALOG_EMPTY;
+  dialogState.resolver = DIALOG_EMPTY;
+  resolve(result);
+}
+
+async function appConfirm(message, title = "请确认") {
+  const ret = await openDialog({
+    mode: "confirm",
+    title,
+    message,
+    confirmText: "确认",
+    cancelText: "取消",
+  });
+  return ret === true;
+}
+
+async function appPrompt(message, defaultValue = "", title = "请输入", placeholder = "") {
+  const ret = await openDialog({
+    mode: "prompt",
+    title,
+    message,
+    defaultValue,
+    placeholder,
+    confirmText: "确定",
+    cancelText: "取消",
+  });
+  if (!ret || ret.action !== "confirm") return null;
+  return ret.value;
 }
 
 async function adminFetch(path, opts = {}) {
@@ -64,7 +140,7 @@ function renderUsers(rows) {
         <td>
           <button type="button" class="row-op" data-op="password" data-user="${x.user_id}">重置密码</button>
           <button type="button" class="row-op" data-op="config" data-user="${x.user_id}">编辑配置</button>
-          <button type="button" class="row-op" data-op="delete" data-user="${x.user_id}">删除</button>
+          <button type="button" class="row-op row-op-danger" data-op="delete" data-user="${x.user_id}">删除</button>
         </td>
       </tr>`
     )
@@ -101,7 +177,7 @@ async function downloadFile(path, fallbackName) {
 }
 
 async function handleResetPassword(userId) {
-  const password = prompt(`给用户 ${userId} 设置新密码（至少4位）：`, "");
+  const password = await appPrompt(`给用户 ${userId} 设置新密码（至少4位）：`, "", "重置密码", "至少 4 位");
   if (password === null) return;
   await adminJson(`/api/admin/users/${encodeURIComponent(userId)}/password`, {
     method: "POST",
@@ -112,9 +188,11 @@ async function handleResetPassword(userId) {
 }
 
 async function handleEditConfig(userId) {
-  const raw = prompt(
+  const raw = await appPrompt(
     `输入用户 ${userId} 的配置 JSON 补丁（merge 模式），例如：{"shop_name":"新店名"}`,
-    "{}"
+    "{}",
+    "编辑配置",
+    '{"shop_name":"新店名"}'
   );
   if (raw === null) return;
   let cfg;
@@ -135,9 +213,12 @@ async function handleEditConfig(userId) {
 }
 
 async function handleDeleteUser(userId) {
-  const sure = confirm(`确定删除用户 ${userId} 吗？会删除账号和配置。`);
+  const sure = await appConfirm(`确定删除用户 ${userId} 吗？会删除账号和配置。`, "删除用户");
   if (!sure) return;
-  const includeOutputs = confirm("是否同时删除该用户导出文件？点“确定”删除，点“取消”保留。");
+  const includeOutputs = await appConfirm(
+    "是否同时删除该用户导出文件？确认=删除，取消=保留。",
+    "删除导出文件"
+  );
   await adminJson(`/api/admin/users/${encodeURIComponent(userId)}?include_outputs=${includeOutputs ? 1 : 0}`, {
     method: "DELETE",
   });
@@ -160,6 +241,22 @@ async function handleCleanupGuests(includeOutputs) {
 }
 
 function wireActions() {
+  $("adminDialogConfirmBtn")?.addEventListener("click", () => {
+    if (dialogState.mode === "prompt") {
+      closeDialog({ action: "confirm", value: ($("adminDialogInput").value || "").trim() });
+      return;
+    }
+    closeDialog(true);
+  });
+  $("adminDialogCancelBtn")?.addEventListener("click", () => closeDialog(false));
+  $("adminDialogMask")?.addEventListener("click", () => closeDialog(false));
+  $("adminDialogInput")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      closeDialog({ action: "confirm", value: ($("adminDialogInput").value || "").trim() });
+    }
+  });
+
   $("loadUsersBtn").addEventListener("click", async () => {
     try {
       await refreshUsers();
@@ -219,7 +316,7 @@ function wireActions() {
 
   $("cleanupGuestsWithOutputsBtn").addEventListener("click", async () => {
     try {
-      const ok = confirm("此操作会删除访客导出文件，是否继续？");
+      const ok = await appConfirm("此操作会删除访客导出文件，是否继续？", "清理确认");
       if (!ok) return;
       await handleCleanupGuests(true);
     } catch (e) {
@@ -246,6 +343,9 @@ function wireActions() {
 function init() {
   loadToken();
   wireActions();
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeDialog(false);
+  });
 }
 
 init();

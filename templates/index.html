@@ -1,5 +1,6 @@
 ﻿<!doctype html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -7,10 +8,13 @@
   <link rel="icon" href="/favicon.ico?v=20260212" type="image/x-icon" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=20260223m4" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css?v=20260224a2" />
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 </head>
+
 <body>
   <div class="bg-orb orb-a"></div>
   <div class="bg-orb orb-b"></div>
@@ -28,15 +32,18 @@
         </div>
       </div>
       <div class="topbar-actions">
-        <button id="openSettingsBtn" class="ghost-btn icon-btn" aria-label="设置" title="设置" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="settingsMenu">
+        <button id="openSettingsBtn" class="ghost-btn icon-btn" aria-label="设置" title="设置" type="button"
+          aria-haspopup="menu" aria-expanded="false" aria-controls="settingsMenu">
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 7.25a1.25 1.25 0 0 1 1.25-1.25h13.5a1.25 1.25 0 1 1 0 2.5H5.25A1.25 1.25 0 0 1 4 7.25Zm0 4.75a1.25 1.25 0 0 1 1.25-1.25h13.5a1.25 1.25 0 1 1 0 2.5H5.25A1.25 1.25 0 0 1 4 12Zm0 4.75a1.25 1.25 0 0 1 1.25-1.25h13.5a1.25 1.25 0 1 1 0 2.5H5.25A1.25 1.25 0 0 1 4 16.75Z"/>
+            <path
+              d="M4 7.25a1.25 1.25 0 0 1 1.25-1.25h13.5a1.25 1.25 0 1 1 0 2.5H5.25A1.25 1.25 0 0 1 4 7.25Zm0 4.75a1.25 1.25 0 0 1 1.25-1.25h13.5a1.25 1.25 0 1 1 0 2.5H5.25A1.25 1.25 0 0 1 4 12Zm0 4.75a1.25 1.25 0 0 1 1.25-1.25h13.5a1.25 1.25 0 1 1 0 2.5H5.25A1.25 1.25 0 0 1 4 16.75Z" />
           </svg>
         </button>
         <div id="settingsMenu" class="settings-menu" role="menu" aria-label="设置菜单" hidden>
           <p id="settingsMenuUser" class="settings-menu-user">当前身份：未登录</p>
           <button id="settingsMenuAuthBtn" class="settings-menu-item" type="button" role="menuitem">登录 / 注册</button>
-          <button id="clearGuestDraftBtn" class="settings-menu-item" type="button" role="menuitem" hidden>清空访客草稿</button>
+          <button id="clearGuestDraftBtn" class="settings-menu-item" type="button" role="menuitem"
+            hidden>清空访客草稿</button>
           <button id="settingsMenuPanelBtn" class="settings-menu-item" type="button" role="menuitem">打开设置</button>
         </div>
       </div>
@@ -48,7 +55,8 @@
           <h2>实时预览</h2>
           <div class="preview-tools">
             <span id="statusText" aria-live="polite">准备就绪</span>
-            <button id="togglePreviewFocusBtn" class="ghost-btn preview-focus-btn" type="button" aria-pressed="false">全屏预览</button>
+            <button id="togglePreviewFocusBtn" class="ghost-btn preview-focus-btn" type="button" aria-pressed="false"
+              title="全屏预览（桌面双击可进入；按 ESC 或再次点击退出）">全屏预览</button>
           </div>
         </div>
         <div id="previewStage" class="preview-stage is-loading">
@@ -68,22 +76,35 @@
           </div>
           <img id="previewImage" alt="海报预览" />
           <div id="previewFocusToast" class="preview-focus-toast" aria-live="polite" hidden></div>
+          <div id="fullscreenExitHint" class="fullscreen-exit-hint" hidden aria-hidden="true">
+            <span class="fullscreen-exit-hint-inner">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+              </svg>
+              点击按钮 或 按 <kbd>ESC</kbd> 退出全屏
+            </span>
+          </div>
         </div>
       </section>
 
       <section class="editor-col" id="editorDrawer">
-        <button id="editorDrawerToggleBtn" class="drawer-toggle" type="button" aria-expanded="false" hidden>展开编辑区</button>
+        <button id="editorDrawerToggleBtn" class="drawer-toggle" type="button" aria-expanded="false"
+          hidden>展开编辑区</button>
         <section class="card form-card">
           <div class="field-grid">
             <label>标题<input id="titleInput" /></label>
             <label class="date-field">日期
               <span class="date-input-wrap">
-                <input id="dateInput" type="date" />
-                <span class="date-input-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24">
-                    <path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1.25A2.75 2.75 0 0 1 22 6.75v12.5A2.75 2.75 0 0 1 19.25 22H4.75A2.75 2.75 0 0 1 2 19.25V6.75A2.75 2.75 0 0 1 4.75 4H6V3a1 1 0 0 1 1-1Zm12.25 8H4v9.25c0 .41.34.75.75.75h14.5c.41 0 .75-.34.75-.75V10ZM4.75 6a.75.75 0 0 0-.75.75V8h16V6.75a.75.75 0 0 0-.75-.75h-1.5v1a1 1 0 1 1-2 0V6h-8v1a1 1 0 1 1-2 0V6h-1ZM7 12.75a1 1 0 1 1 0 2h1.5a1 1 0 1 1 0-2H7Zm4.25 0a1 1 0 1 1 0 2h1.5a1 1 0 1 1 0-2h-1.5Zm4.25 0a1 1 0 1 1 0 2H17a1 1 0 1 1 0-2h-1.5Z"/>
+                <input id="dateInput" type="text" inputmode="numeric" placeholder="如：2026-02-24" autocomplete="off"
+                  spellcheck="false" />
+                <input id="dateInputPicker" type="date" aria-hidden="true" tabindex="-1" />
+                <button id="dateInputIconBtn" class="date-input-icon" type="button" aria-label="打开日期选择">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1.25A2.75 2.75 0 0 1 22 6.75v12.5A2.75 2.75 0 0 1 19.25 22H4.75A2.75 2.75 0 0 1 2 19.25V6.75A2.75 2.75 0 0 1 4.75 4H6V3a1 1 0 0 1 1-1Zm12.25 8H4v9.25c0 .41.34.75.75.75h14.5c.41 0 .75-.34.75-.75V10ZM4.75 6a.75.75 0 0 0-.75.75V8h16V6.75a.75.75 0 0 0-.75-.75h-1.5v1a1 1 0 1 1-2 0V6h-8v1a1 1 0 1 1-2 0V6h-1ZM7 12.75a1 1 0 1 1 0 2h1.5a1 1 0 1 1 0-2H7Zm4.25 0a1 1 0 1 1 0 2h1.5a1 1 0 1 1 0-2h-1.5Zm4.25 0a1 1 0 1 1 0 2H17a1 1 0 1 1 0-2h-1.5Z" />
                   </svg>
-                </span>
+                </button>
               </span>
             </label>
           </div>
@@ -95,7 +116,9 @@
           </div>
           <textarea id="contentInput" rows="10" hidden placeholder="请输入正文内容"></textarea>
           <div id="priceEditorPanel">
-            <div class="section-head"><h2>价格表内容</h2></div>
+            <div class="section-head">
+              <h2>价格表内容</h2>
+            </div>
             <p class="price-editor-tip">直接在下方编辑，生成时会自动转为正文格式。</p>
             <div class="price-editor-table-wrap">
               <table class="price-editor-table">
@@ -134,10 +157,12 @@
           <div class="section-head template-manager-head">
             <h2>模板管理</h2>
             <div class="template-toggle-wrap">
-              <button id="templateManagerToggleBtn" class="ghost-btn template-manager-toggle" type="button" aria-expanded="false" aria-controls="templateManagerBody">展开</button>
+              <button id="templateManagerToggleBtn" class="ghost-btn template-manager-toggle" type="button"
+                aria-expanded="false" aria-controls="templateManagerBody">展开</button>
               <aside id="templateManagerTip" class="template-manager-tip" hidden>
                 <p>点击展开模板切换、管理与导出格式设置</p>
-                <button id="templateManagerTipAcknowledgeBtn" class="template-manager-tip-btn" type="button">知道了</button>
+                <button id="templateManagerTipAcknowledgeBtn" class="template-manager-tip-btn"
+                  type="button">知道了</button>
               </aside>
             </div>
           </div>
@@ -182,22 +207,32 @@
       </header>
       <div class="modal-body">
         <div class="settings-tabs" role="tablist" aria-label="设置分组">
-          <button class="settings-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="settingsPaneBase" data-settings-tab="base">基础信息</button>
-          <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPaneStyle" data-settings-tab="style">视觉风格</button>
-          <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPaneMedia" data-settings-tab="media">图片素材</button>
-          <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPaneParam" data-settings-tab="param">水印设置</button>
+          <button class="settings-tab is-active" type="button" role="tab" aria-selected="true"
+            aria-controls="settingsPaneBase" data-settings-tab="base">基础信息</button>
+          <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPaneStyle"
+            data-settings-tab="style">视觉风格</button>
+          <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPaneMedia"
+            data-settings-tab="media">图片素材</button>
+          <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPaneParam"
+            data-settings-tab="param">水印设置</button>
         </div>
 
-        <section id="settingsPaneBase" class="card modal-card settings-pane is-active" role="tabpanel" data-settings-pane="base">
-          <div class="section-head"><h2>基础信息</h2></div>
+        <section id="settingsPaneBase" class="card modal-card settings-pane is-active" role="tabpanel"
+          data-settings-pane="base">
+          <div class="section-head">
+            <h2>基础信息</h2>
+          </div>
           <label>店铺名称<input id="shopName" /></label>
           <label>联系电话<input id="phone" /></label>
           <label>地址<input id="address" /></label>
           <label>标语<input id="slogan" /></label>
         </section>
 
-        <section id="settingsPaneStyle" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="style" hidden>
-          <div class="section-head"><h2>视觉风格</h2></div>
+        <section id="settingsPaneStyle" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="style"
+          hidden>
+          <div class="section-head">
+            <h2>视觉风格</h2>
+          </div>
           <div class="field-grid">
             <label class="theme-color-field">主题色
               <div class="theme-color-row">
@@ -205,12 +240,18 @@
                 <span id="themeColorHex" class="theme-color-hex">#B22222</span>
               </div>
               <div id="themePalette" class="theme-palette" aria-label="推荐主题色">
-                <button type="button" class="theme-swatch" data-color="#D32F2F" title="#D32F2F" aria-label="推荐色 #D32F2F"></button>
-                <button type="button" class="theme-swatch" data-color="#2563EB" title="#2563EB" aria-label="推荐色 #2563EB"></button>
-                <button type="button" class="theme-swatch" data-color="#16A34A" title="#16A34A" aria-label="推荐色 #16A34A"></button>
-                <button type="button" class="theme-swatch" data-color="#EA580C" title="#EA580C" aria-label="推荐色 #EA580C"></button>
-                <button type="button" class="theme-swatch" data-color="#7C3AED" title="#7C3AED" aria-label="推荐色 #7C3AED"></button>
-                <button type="button" class="theme-swatch" data-color="#0891B2" title="#0891B2" aria-label="推荐色 #0891B2"></button>
+                <button type="button" class="theme-swatch" data-color="#D32F2F" title="#D32F2F"
+                  aria-label="推荐色 #D32F2F"></button>
+                <button type="button" class="theme-swatch" data-color="#2563EB" title="#2563EB"
+                  aria-label="推荐色 #2563EB"></button>
+                <button type="button" class="theme-swatch" data-color="#16A34A" title="#16A34A"
+                  aria-label="推荐色 #16A34A"></button>
+                <button type="button" class="theme-swatch" data-color="#EA580C" title="#EA580C"
+                  aria-label="推荐色 #EA580C"></button>
+                <button type="button" class="theme-swatch" data-color="#7C3AED" title="#7C3AED"
+                  aria-label="推荐色 #7C3AED"></button>
+                <button type="button" class="theme-swatch" data-color="#0891B2" title="#0891B2"
+                  aria-label="推荐色 #0891B2"></button>
               </div>
             </label>
             <label>卡片样式
@@ -237,21 +278,27 @@
             <input id="bgBlur" type="range" min="0" max="30" step="1" />
           </label>
           <label>
-            <span class="range-label"><span>背景亮度</span><span id="bgBrightnessValue" class="range-value">1.00x</span></span>
+            <span class="range-label"><span>背景亮度</span><span id="bgBrightnessValue"
+                class="range-value">1.00x</span></span>
             <input id="bgBrightness" type="range" min="0.5" max="1.5" step="0.05" />
           </label>
           <label>
-            <span class="range-label"><span>卡片透明度</span><span id="cardOpacityValue" class="range-value">100%</span></span>
+            <span class="range-label"><span>卡片透明度</span><span id="cardOpacityValue"
+                class="range-value">100%</span></span>
             <input id="cardOpacity" type="range" min="0.1" max="1" step="0.05" />
           </label>
           <label>
-            <span class="range-label"><span>印章透明度</span><span id="stampOpacityValue" class="range-value">85%</span></span>
+            <span class="range-label"><span>印章透明度</span><span id="stampOpacityValue"
+                class="range-value">85%</span></span>
             <input id="stampOpacity" type="range" min="0.1" max="1" step="0.05" />
           </label>
         </section>
 
-        <section id="settingsPaneMedia" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="media" hidden>
-          <div class="section-head"><h2>图片素材</h2></div>
+        <section id="settingsPaneMedia" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="media"
+          hidden>
+          <div class="section-head">
+            <h2>图片素材</h2>
+          </div>
           <p>访客模式默认不显示 Logo。你可以在这里直接上传自己的包站 Logo、印章和二维码。</p>
           <div class="field-group">
             <label>背景预设</label>
@@ -265,60 +312,64 @@
           <div class="field-grid media-grid">
             <label class="upload-field">背景图
               <input id="bgUpload" type="file" accept="image/*" />
+              <p class="upload-hint">JPG / PNG / WebP · 最大 15MB</p>
               <div class="upload-thumb" id="bgThumbWrap" hidden>
                 <img id="bgThumb" alt="背景图缩略图" loading="lazy" />
                 <button id="bgThumbRemoveBtn" class="upload-thumb-remove" type="button" aria-label="删除背景图">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M3 6h18"/>
-                    <path d="M9 6V4h6v2"/>
-                    <path d="M19 6l-1 14H6L5 6"/>
-                    <path d="M10 11v6"/>
-                    <path d="M14 11v6"/>
+                    <path d="M3 6h18" />
+                    <path d="M9 6V4h6v2" />
+                    <path d="M19 6l-1 14H6L5 6" />
+                    <path d="M10 11v6" />
+                    <path d="M14 11v6" />
                   </svg>
                 </button>
               </div>
             </label>
             <label class="upload-field">Logo
               <input id="logoUpload" type="file" accept="image/*" />
+              <p class="upload-hint">JPG / PNG / WebP · 最大 15MB · 支持自动裁剪</p>
               <div class="upload-thumb" id="logoThumbWrap" hidden>
                 <img id="logoThumb" alt="Logo 缩略图" loading="lazy" />
                 <button id="logoThumbRemoveBtn" class="upload-thumb-remove" type="button" aria-label="删除 Logo">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M3 6h18"/>
-                    <path d="M9 6V4h6v2"/>
-                    <path d="M19 6l-1 14H6L5 6"/>
-                    <path d="M10 11v6"/>
-                    <path d="M14 11v6"/>
+                    <path d="M3 6h18" />
+                    <path d="M9 6V4h6v2" />
+                    <path d="M19 6l-1 14H6L5 6" />
+                    <path d="M10 11v6" />
+                    <path d="M14 11v6" />
                   </svg>
                 </button>
               </div>
             </label>
             <label class="upload-field">印章
               <input id="stampUpload" type="file" accept="image/*" />
+              <p class="upload-hint">建议使用透明背景 PNG · 最大 15MB</p>
               <div class="upload-thumb" id="stampThumbWrap" hidden>
                 <img id="stampThumb" alt="印章缩略图" loading="lazy" />
                 <button id="stampThumbRemoveBtn" class="upload-thumb-remove" type="button" aria-label="删除印章">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M3 6h18"/>
-                    <path d="M9 6V4h6v2"/>
-                    <path d="M19 6l-1 14H6L5 6"/>
-                    <path d="M10 11v6"/>
-                    <path d="M14 11v6"/>
+                    <path d="M3 6h18" />
+                    <path d="M9 6V4h6v2" />
+                    <path d="M19 6l-1 14H6L5 6" />
+                    <path d="M10 11v6" />
+                    <path d="M14 11v6" />
                   </svg>
                 </button>
               </div>
             </label>
             <label class="upload-field">二维码
               <input id="qrUpload" type="file" accept="image/*" />
+              <p class="upload-hint">JPG / PNG / WebP · 最大 15MB</p>
               <div class="upload-thumb" id="qrThumbWrap" hidden>
                 <img id="qrThumb" alt="二维码缩略图" loading="lazy" />
                 <button id="qrThumbRemoveBtn" class="upload-thumb-remove" type="button" aria-label="删除二维码">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M3 6h18"/>
-                    <path d="M9 6V4h6v2"/>
-                    <path d="M19 6l-1 14H6L5 6"/>
-                    <path d="M10 11v6"/>
-                    <path d="M14 11v6"/>
+                    <path d="M3 6h18" />
+                    <path d="M9 6V4h6v2" />
+                    <path d="M19 6l-1 14H6L5 6" />
+                    <path d="M10 11v6" />
+                    <path d="M14 11v6" />
                   </svg>
                 </button>
               </div>
@@ -326,18 +377,23 @@
           </div>
         </section>
 
-        <section id="settingsPaneParam" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="param" hidden>
-          <div class="section-head"><h2>水印设置</h2></div>
+        <section id="settingsPaneParam" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="param"
+          hidden>
+          <div class="section-head">
+            <h2>水印设置</h2>
+          </div>
           <label class="switch-line">
             <input id="watermarkEnabled" type="checkbox" /> 启用水印
           </label>
           <label>水印文字<input id="watermarkText" /></label>
           <label>
-            <span class="range-label"><span>水印透明度</span><span id="watermarkOpacityValue" class="range-value">15%</span></span>
+            <span class="range-label"><span>水印透明度</span><span id="watermarkOpacityValue"
+                class="range-value">15%</span></span>
             <input id="watermarkOpacity" type="range" min="0.05" max="0.5" step="0.05" />
           </label>
           <label>
-            <span class="range-label"><span>水印密度</span><span id="watermarkDensityValue" class="range-value">1.0x</span></span>
+            <span class="range-label"><span>水印密度</span><span id="watermarkDensityValue"
+                class="range-value">1.0x</span></span>
             <input id="watermarkDensity" type="range" min="0.5" max="2" step="0.1" />
           </label>
         </section>
@@ -396,15 +452,18 @@
 
   <div id="priceRowDrawerModal" class="modal hidden" aria-hidden="true">
     <div id="priceDrawerMask" class="modal-mask"></div>
-    <section class="modal-panel modal-panel-sm price-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="priceDrawerTitle">
+    <section class="modal-panel modal-panel-sm price-drawer-panel" role="dialog" aria-modal="true"
+      aria-labelledby="priceDrawerTitle">
       <header class="modal-head">
         <h2 id="priceDrawerTitle">编辑纸种</h2>
         <button id="closePriceDrawerBtn" class="ghost-btn" type="button">关闭</button>
       </header>
       <div class="modal-body">
         <div class="drawer-row drawer-row-2">
-          <label class="drawer-inline-field"><span class="drawer-field-label">纸种</span><input id="priceDrawerName" /></label>
-          <label class="drawer-inline-field"><span class="drawer-field-label">单位</span><input id="priceDrawerUnit" placeholder="元/吨" /></label>
+          <label class="drawer-inline-field"><span class="drawer-field-label">纸种</span><input
+              id="priceDrawerName" /></label>
+          <label class="drawer-inline-field"><span class="drawer-field-label">单位</span><input id="priceDrawerUnit"
+              placeholder="元/吨" /></label>
         </div>
         <div class="drawer-row drawer-row-2 drawer-type-value-row">
           <label class="drawer-inline-field"><span class="drawer-field-label">类型</span>
@@ -416,7 +475,8 @@
           </label>
           <div class="drawer-value-slot">
             <div id="priceDrawerValueNumberWrap">
-              <label class="drawer-inline-field"><span class="drawer-field-label">值</span><input id="priceDrawerValue" placeholder="例如：1350" /></label>
+              <label class="drawer-inline-field"><span class="drawer-field-label">值</span><input id="priceDrawerValue"
+                  placeholder="例如：1350" /></label>
             </div>
             <div id="priceDrawerValueRangeWrap" class="drawer-row drawer-range-wrap" hidden>
               <input class="drawer-range-input" id="priceDrawerMin" />
@@ -424,7 +484,8 @@
               <input class="drawer-range-input" id="priceDrawerMax" />
             </div>
             <div id="priceDrawerValueTextWrap" hidden>
-              <label class="drawer-inline-field"><span class="drawer-field-label">说明</span><input id="priceDrawerText" placeholder="例如：上调50" /></label>
+              <label class="drawer-inline-field"><span class="drawer-field-label">说明</span><input id="priceDrawerText"
+                  placeholder="例如：上调50" /></label>
             </div>
           </div>
         </div>
@@ -439,7 +500,8 @@
 
   <div id="dialogModal" class="modal hidden" aria-hidden="true">
     <div id="dialogMask" class="modal-mask"></div>
-    <section class="modal-panel modal-panel-sm dialog-panel" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+    <section class="modal-panel modal-panel-sm dialog-panel" role="dialog" aria-modal="true"
+      aria-labelledby="dialogTitle">
       <header class="modal-head">
         <h2 id="dialogTitle">提示</h2>
         <button id="closeDialogBtn" class="ghost-btn" type="button">关闭</button>
@@ -457,7 +519,7 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=20260223m4"></script>
+  <script src="/static/app.js?v=20260224a2"></script>
 </body>
-</html>
 
+</html>

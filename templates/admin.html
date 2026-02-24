@@ -4,20 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>管理后台 | 海报系统</title>
-  <link rel="icon" href="/favicon.ico?v=20260214" type="image/x-icon" />
+  <link rel="icon" href="/favicon.ico?v=20260224a2" type="image/x-icon" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #f2f6fb;
+      --bg: #f5f7fb;
       --ink: #0f172a;
       --muted: #5b6478;
-      --line: #d6deea;
-      --primary: #0d6efd;
+      --line: #d9e2ef;
+      --primary: #0b8f7a;
+      --primary-strong: #087f6d;
+      --primary-soft: #0aa386;
       --card: #ffffff;
       --ok: #0f9d58;
       --err: #c62828;
+      --danger: #d7364f;
     }
     * { box-sizing: border-box; }
     body {
@@ -29,6 +32,7 @@
         radial-gradient(circle at 120% 20%, #d7f4e7 0%, transparent 40%),
         var(--bg);
     }
+    body.no-scroll { overflow: hidden; }
     .shell {
       width: min(1120px, calc(100% - 24px));
       margin: 24px auto 40px;
@@ -79,9 +83,9 @@
       font-family: inherit;
     }
     button {
-      height: 42px;
+      min-height: 44px;
       border: 1px solid transparent;
-      border-radius: 10px;
+      border-radius: 12px;
       padding: 0 14px;
       font-size: .92rem;
       font-weight: 600;
@@ -89,10 +93,21 @@
       cursor: pointer;
       background: #eef4ff;
       color: #1a3b78;
+      transition: transform .16s ease, background-color .16s ease, border-color .16s ease, color .16s ease;
     }
-    button.primary { background: var(--primary); color: #fff; }
+    button:active { transform: translateY(1px); }
+    button.primary { background: linear-gradient(90deg, var(--primary-strong), var(--primary-soft)); color: #fff; }
     button.ghost { background: #fff; border-color: var(--line); color: #1f2940; }
+    button.danger { background: #fff3f5; border-color: #f2c4cc; color: #9f1239; }
+    button.ghost:hover { background: #f8fbff; border-color: #c7d4e5; }
+    button.danger:hover { background: #ffecef; border-color: #ebabb8; }
     button:disabled { opacity: .6; cursor: not-allowed; }
+    button:focus-visible,
+    input:focus-visible,
+    a:focus-visible {
+      outline: 2px solid #0f8b76;
+      outline-offset: 2px;
+    }
     .status {
       margin-top: 10px;
       font-size: .9rem;
@@ -112,9 +127,88 @@
       display: inline-block;
       border-radius: 999px;
       padding: 2px 9px;
-      font-size: .78rem;
-      background: #edf2ff;
-      color: #31427a;
+      font-size: .8rem;
+      background: #eaf7f4;
+      color: #176659;
+      text-decoration: none;
+    }
+    .row-op {
+      min-height: 32px;
+      border-radius: 8px;
+      padding: 0 10px;
+      margin: 2px 4px 2px 0;
+      font-size: .84rem;
+      border: 1px solid #c9d7e8;
+      background: #f8fbff;
+      color: #334155;
+    }
+    .row-op:hover {
+      border-color: #a4b9d2;
+      background: #eef5ff;
+      color: #0f3f72;
+    }
+    .row-op-danger {
+      border-color: #f2c4cc;
+      background: #fff3f5;
+      color: #9f1239;
+    }
+    .row-op-danger:hover {
+      border-color: #ebabb8;
+      background: #ffecef;
+    }
+    .admin-modal.hidden { display: none; }
+    .admin-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+    }
+    .admin-modal-mask {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, .42);
+      backdrop-filter: blur(4px);
+    }
+    .admin-modal-panel {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: min(520px, calc(100vw - 24px));
+      max-height: calc(100vh - 32px);
+      overflow: auto;
+      background: linear-gradient(180deg, #f9fbff 0%, #f3f7fe 100%);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 14px 40px rgba(15, 23, 42, .18);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .admin-modal-title {
+      margin: 0;
+      font-family: Outfit, sans-serif;
+      font-size: 1.04rem;
+    }
+    .admin-modal-text {
+      margin: 0;
+      color: #334155;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .admin-modal-input {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0 12px;
+      font-size: 16px;
+      font-family: inherit;
+    }
+    .admin-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
     }
     @media (max-width: 720px) {
       .shell { width: calc(100% - 16px); margin-top: 12px; }
@@ -189,6 +283,19 @@
       </div>
     </section>
   </main>
-  <script src="/static/admin.js?v=20260214a"></script>
+  <div id="adminDialogModal" class="admin-modal hidden" aria-hidden="true">
+    <div id="adminDialogMask" class="admin-modal-mask"></div>
+    <section class="admin-modal-panel" role="dialog" aria-modal="true" aria-labelledby="adminDialogTitle">
+      <h2 id="adminDialogTitle" class="admin-modal-title">提示</h2>
+      <p id="adminDialogMessage" class="admin-modal-text"></p>
+      <input id="adminDialogInput" class="admin-modal-input" hidden />
+      <footer class="admin-modal-actions">
+        <button id="adminDialogCancelBtn" class="ghost" type="button">取消</button>
+        <button id="adminDialogConfirmBtn" class="primary" type="button">确定</button>
+      </footer>
+    </section>
+  </div>
+  <script src="/static/admin.js?v=20260224a2"></script>
 </body>
 </html>
+
