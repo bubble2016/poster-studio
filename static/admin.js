@@ -227,10 +227,21 @@ async function handleDeleteUser(userId) {
 }
 
 async function handleCleanupGuests(includeOutputs) {
-  const days = Number(($("cleanupDaysInput").value || "30").trim());
-  if (!Number.isFinite(days) || days < 0 || days > 3650) {
-    throw new Error("天数范围应在 0-3650");
+  const days = Number(($("cleanupDaysInput").value || "0").trim());
+  if (!Number.isFinite(days) || !Number.isInteger(days) || days < 0 || days > 3650) {
+    throw new Error("天数范围应为 0-3650 的整数");
   }
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const pad = (n) => String(n).padStart(2, "0");
+  const fmt = (d) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const scopeText = days === 0
+    ? "将清理全部访客账号（guest_ 开头）"
+    : `将清理最后活跃时间早于 ${fmt(cutoff)} 的访客账号`;
+  const outputsText = includeOutputs ? "会同时删除导出文件" : "会保留导出文件";
+  const ok = await appConfirm(`${scopeText}\n${outputsText}\n是否继续？`, "清理访客确认");
+  if (!ok) return;
   const data = await adminJson("/api/admin/guests/cleanup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -316,8 +327,6 @@ function wireActions() {
 
   $("cleanupGuestsWithOutputsBtn").addEventListener("click", async () => {
     try {
-      const ok = await appConfirm("此操作会删除访客导出文件，是否继续？", "清理确认");
-      if (!ok) return;
       await handleCleanupGuests(true);
     } catch (e) {
       setStatus(e.message || "清理失败", "err");

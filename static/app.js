@@ -33,6 +33,16 @@ const LEGACY_CARD_STYLE_MAP = Object.freeze({
   ink: "single",
   neon: "single",
 });
+const CARD_STYLE_PREVIEW_HINT = Object.freeze({
+  single: "标准海报",
+  stack: "叠层海报",
+  block: "立体厚边",
+  flip: "翻页折角",
+  ticket: "票据锯齿",
+  double: "双层描边",
+  aurora: "玻璃极光",
+  paper_relief: "纸感浮雕",
+});
 const BG_VARIANTS = ["bg-variant-a", "bg-variant-b", "bg-variant-c", "bg-variant-d", "bg-variant-e"];
 const MAX_UPLOAD_MB = 15;
 const GUEST_DRAFT_STORAGE_KEY = "poster_guest_draft_v1";
@@ -40,6 +50,7 @@ const GUEST_DRAFT_SCHEMA_VERSION = 1;
 const GUEST_DRAFT_EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
 const SETTINGS_TIP_SEEN_KEY = "poster_settings_tip_seen_v1";
 const TEMPLATE_MANAGER_TIP_SEEN_KEY = "poster_template_manager_tip_seen_v3";
+const TEMPLATE_MANAGER_COLLAPSED_KEY = "poster_template_manager_collapsed_v1";
 const PRICE_LINE_PATTERN = /^\s*【([^】]+)】\s*[：:]\s*(.+?)\s*$/;
 const PRICE_UNIT_DEFAULT = "元/吨";
 const DIALOG_EMPTY = () => { };
@@ -241,6 +252,58 @@ function syncAllRangeValues() {
 function normalizeCardStyle(style) {
   const savedStyle = LEGACY_CARD_STYLE_MAP[style] || style || "single";
   return AVAILABLE_CARD_STYLES.has(savedStyle) ? savedStyle : "single";
+}
+
+function syncCardStyleGallery() {
+  const current = normalizeCardStyle($("cardStyle")?.value);
+  document.querySelectorAll("#cardStyleGallery .card-style-option").forEach((btn) => {
+    const active = btn.dataset.cardStyle === current;
+    btn.classList.toggle("is-active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function renderCardStyleGallery() {
+  const gallery = $("cardStyleGallery");
+  const select = $("cardStyle");
+  if (!gallery || !select) return;
+
+  gallery.innerHTML = "";
+  [...select.options].forEach((opt) => {
+    const styleValue = normalizeCardStyle(opt.value);
+    if (!AVAILABLE_CARD_STYLES.has(styleValue)) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `card-style-option card-style-option--${styleValue}`;
+    btn.dataset.cardStyle = styleValue;
+    btn.setAttribute("role", "option");
+    btn.setAttribute("aria-label", `${opt.textContent}，${CARD_STYLE_PREVIEW_HINT[styleValue] || "样式预览"}`);
+    btn.innerHTML = `
+      <span class="card-style-thumb" aria-hidden="true">
+        <span class="card-style-poster">
+          <span class="card-mini-logo"></span>
+          <span class="card-mini-title"></span>
+          <span class="card-mini-date"></span>
+          <span class="card-mini-divider"></span>
+          <span class="card-mini-row card-mini-row-a"></span>
+          <span class="card-mini-row card-mini-row-b"></span>
+          <span class="card-mini-row card-mini-row-c"></span>
+          <span class="card-mini-footer"></span>
+          <span class="card-mini-stamp"></span>
+        </span>
+      </span>
+      <span class="card-style-name">${opt.textContent || styleValue}</span>
+    `;
+    btn.addEventListener("click", () => {
+      if (select.value === styleValue) return;
+      select.value = styleValue;
+      select.dispatchEvent(new Event("input", { bubbles: true }));
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    gallery.appendChild(btn);
+  });
+  syncCardStyleGallery();
 }
 
 function pickRandomDifferentPath(items, currentPath) {
@@ -810,8 +873,13 @@ function syncTemplateManagerCollapseUi() {
   if (!card || !toggleBtn || !tip) return;
   const bodyBlocks = card.querySelectorAll(".template-manager-body");
   if (!card.dataset.collapseInited) {
-    const firstUse = !hasSeenTemplateManagerTip();
-    card.classList.toggle("is-collapsed", !firstUse);
+    const pref = getTemplateManagerCollapsedPreference();
+    if (pref === null) {
+      const firstUse = !hasSeenTemplateManagerTip();
+      card.classList.toggle("is-collapsed", !firstUse);
+    } else {
+      card.classList.toggle("is-collapsed", pref);
+    }
     card.dataset.collapseInited = "1";
     window.requestAnimationFrame(() => {
       card.classList.add("is-ready");
@@ -875,6 +943,21 @@ function hasSeenTemplateManagerTip() {
   } catch (_) {
     return true;
   }
+}
+
+function getTemplateManagerCollapsedPreference() {
+  try {
+    const raw = localStorage.getItem(TEMPLATE_MANAGER_COLLAPSED_KEY);
+    if (raw === "1") return true;
+    if (raw === "0") return false;
+  } catch (_) { }
+  return null;
+}
+
+function setTemplateManagerCollapsedPreference(collapsed) {
+  try {
+    localStorage.setItem(TEMPLATE_MANAGER_COLLAPSED_KEY, collapsed ? "1" : "0");
+  } catch (_) { }
 }
 
 function markTemplateManagerTipSeen() {
@@ -1134,7 +1217,24 @@ function buildConfigPayloadForSave() {
   payload.last_title = $("titleInput").value.trim();
   payload.last_date = $("dateInput").value.trim();
   payload.last_content = $("contentInput").value;
+  payload.last_template = $("templateSelect")?.value || "";
   return payload;
+}
+
+async function persistTemplateState() {
+  if (state.isGuest) {
+    saveGuestDraft();
+    return true;
+  }
+  try {
+    const payload = buildConfigPayloadForSave();
+    const d = await api("/api/config", "POST", payload);
+    state.config = { ...state.config, ...(d?.config || payload) };
+    return true;
+  } catch (e) {
+    showStatusError(e.message || "模板状态保存失败");
+    return false;
+  }
 }
 
 function getGuestDraftEnvelope() {
@@ -1393,6 +1493,7 @@ function restoreSettingsSnapshot() {
     if (cfg[k] !== undefined) state.config[k] = cfg[k];
   });
   syncAllRangeValues();
+  syncCardStyleGallery();
   syncUploadThumbsFromConfig(cfg);
   renderPresetGrid();
   refreshPreview().catch(() => { });
@@ -1441,6 +1542,7 @@ function formConfig() {
     watermark_text: $("watermarkText").value,
     watermark_opacity: Number($("watermarkOpacity").value),
     watermark_density: Number($("watermarkDensity").value),
+    holiday_text_style: "festive",
     export_format: $("exportFormat").value,
   };
 }
@@ -1470,6 +1572,7 @@ function bindFromConfig(cfg) {
   $("exportFormat").value = cfg.export_format || "PNG";
   syncUploadThumbsFromConfig(cfg);
   syncAllRangeValues();
+  syncCardStyleGallery();
 
   updateStats();
 }
@@ -1821,7 +1924,28 @@ function syncPriceDrawerModeUi() {
   }
 }
 
-function openPriceRowDrawer(index) {
+function focusPriceDrawerInput(field, mode) {
+  let target = $("priceDrawerName");
+  if (field === "value") {
+    if (mode === "range") {
+      target = $("priceDrawerMin");
+    } else if (mode === "text") {
+      target = $("priceDrawerText");
+    } else {
+      target = $("priceDrawerValue");
+    }
+  } else if (field === "unit") {
+    target = $("priceDrawerUnit");
+  } else if (field === "mode") {
+    target = $("priceDrawerMode");
+  }
+  target?.focus();
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+    target.select();
+  }
+}
+
+function openPriceRowDrawer(index, focusField = "name") {
   const row = state.priceEditorRows[index];
   if (!row) return;
   state.editingPriceRowIndex = index;
@@ -1835,7 +1959,7 @@ function openPriceRowDrawer(index) {
   syncPriceDrawerModeUi();
   $("priceRowDrawerModal").classList.remove("hidden");
   document.body.classList.add("no-scroll");
-  setTimeout(() => $("priceDrawerName")?.focus(), 0);
+  setTimeout(() => focusPriceDrawerInput(focusField, row.mode || "number"), 0);
 }
 
 function closePriceRowDrawer() {
@@ -1964,13 +2088,13 @@ function renderPriceEditorTable() {
 
   tbody.innerHTML = state.priceEditorRows.map((row, idx) => {
     const mode = row.mode || "number";
-    let valueCellHtml = `<input data-field="value" value="${escapeAttr(row.value || "")}" placeholder="1350" />`;
+    let valueCellHtml = `<input data-field="value" value="${escapeAttr(row.value || "")}" inputmode="decimal" placeholder="1350" />`;
     if (mode === "range") {
       valueCellHtml = `
         <div class="price-range-wrap">
-          <input data-field="min" value="${escapeAttr(row.min || "")}" placeholder="最低" />
+          <input data-field="min" value="${escapeAttr(row.min || "")}" inputmode="decimal" placeholder="最低" />
           <span class="price-range-sep">-</span>
-          <input data-field="max" value="${escapeAttr(row.max || "")}" placeholder="最高" />
+          <input data-field="max" value="${escapeAttr(row.max || "")}" inputmode="decimal" placeholder="最高" />
         </div>
       `;
     } else if (mode === "text") {
@@ -2060,6 +2184,28 @@ function getHolidayPresetPath() {
 
 function shouldUseHolidayPreset(templateName) {
   return isHolidayTemplateName(templateName);
+}
+
+function resolveInitialTemplateName(tplSel) {
+  const options = [...(tplSel?.options || [])].map((opt) => opt.value);
+  if (!options.length) return "";
+
+  const savedTemplate = String(state.config.last_template || "").trim();
+  if (savedTemplate && options.includes(savedTemplate)) {
+    return savedTemplate;
+  }
+
+  const lastTitle = String(state.config.last_title || "").trim();
+  if (lastTitle) {
+    const matchedBySystemTitle = options.find((name) => {
+      const tpl = state.systemTemplates[name];
+      if (!Array.isArray(tpl)) return false;
+      return String(tpl[1] || "").trim() === lastTitle;
+    });
+    if (matchedBySystemTitle) return matchedBySystemTitle;
+  }
+
+  return options[0];
 }
 
 function applyHolidayPresetIfNeeded(templateName) {
@@ -2454,17 +2600,18 @@ async function init() {
   Object.keys(state.systemTemplates).forEach((name) => tplSel.add(new Option(name, name)));
   Object.keys(state.config.custom_templates || {}).forEach((name) => tplSel.add(new Option(name, name)));
 
-  if (tplSel.options.length > 0) {
-    tplSel.value = tplSel.options[0].value;
-  }
+  const initialTemplateName = resolveInitialTemplateName(tplSel);
+  if (initialTemplateName) tplSel.value = initialTemplateName;
 
   const hasSavedContent = !!(state.config.last_content || "").trim();
   if (!hasSavedContent && tplSel.value) {
     applyTemplateByName(tplSel.value);
     updateStats();
   }
+  applyHolidayPresetIfNeeded(tplSel.value);
   initEnhancedTemplateSelect("templateSelect");
   initEnhancedTemplateSelect("exportFormat");
+  renderCardStyleGallery();
 
   const onType = debounce(async () => {
     updateStats();
@@ -2492,6 +2639,8 @@ async function init() {
   });
   $("themeColor").addEventListener("input", () => syncThemeColorUi($("themeColor").value));
   $("themeColor").addEventListener("change", () => syncThemeColorUi($("themeColor").value));
+  $("cardStyle").addEventListener("input", syncCardStyleGallery);
+  $("cardStyle").addEventListener("change", syncCardStyleGallery);
 
   $("openSettingsBtn").addEventListener("click", (e) => {
     e.stopPropagation();
@@ -2577,8 +2726,8 @@ async function init() {
       }
     }
   });
-  $("closePriceDrawerBtn").addEventListener("click", closePriceRowDrawer);
-  $("cancelPriceDrawerBtn").addEventListener("click", closePriceRowDrawer);
+  $("closePriceDrawerBtn")?.addEventListener("click", closePriceRowDrawer);
+  $("cancelPriceDrawerBtn")?.addEventListener("click", closePriceRowDrawer);
   $("priceDrawerMask").addEventListener("click", closePriceRowDrawer);
   $("priceDrawerMode").addEventListener("change", syncPriceDrawerModeUi);
   $("savePriceDrawerBtn").addEventListener("click", () => {
@@ -2625,7 +2774,8 @@ async function init() {
     if (isMobileLayout()) {
       const isDragging = e.target.closest(".price-sort-handle");
       if (isDragging) return;
-      openPriceRowDrawer(idx);
+      const focusField = e.target.closest(".price-summary-meta") ? "value" : "name";
+      openPriceRowDrawer(idx, focusField);
     }
   });
   $("priceTableBody").addEventListener("input", () => {
@@ -2652,7 +2802,7 @@ async function init() {
     e.preventDefault();
     const idx = Number(tr.dataset.rowIndex);
     if (!Number.isInteger(idx)) return;
-    openPriceRowDrawer(idx);
+    openPriceRowDrawer(idx, "name");
   });
   $("priceEditorExtra").addEventListener("input", () => {
     syncHiddenContentFromMainPriceEditor();
@@ -2788,9 +2938,11 @@ async function init() {
     const card = $("templateManagerCard");
     if (!card) return;
     card.classList.toggle("is-collapsed");
+    setTemplateManagerCollapsedPreference(card.classList.contains("is-collapsed"));
     markTemplateManagerTipSeen();
     syncTemplateManagerCollapseUi();
   });
+
   $("templateManagerTipAcknowledgeBtn").addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -2908,7 +3060,7 @@ async function init() {
     applyHolidayPresetIfNeeded(selectedName);
     syncEditorModeByTemplate();
     updateStats();
-    saveGuestDraft();
+    await persistTemplateState();
     await refreshPreview();
   });
 
@@ -2925,8 +3077,9 @@ async function init() {
       $("templateSelect").add(new Option(trimmed, trimmed));
     }
     $("templateSelect").value = trimmed;
+    applyHolidayPresetIfNeeded(trimmed);
     syncEditorModeByTemplate();
-    saveGuestDraft();
+    await persistTemplateState();
   });
 
   $("deleteTemplateBtn").addEventListener("click", async () => {
@@ -2943,10 +3096,13 @@ async function init() {
     if ($("templateSelect").options.length > 0) {
       $("templateSelect").value = $("templateSelect").options[0].value;
       applyTemplateByName($("templateSelect").value);
+      applyHolidayPresetIfNeeded($("templateSelect").value);
       syncEditorModeByTemplate();
       updateStats();
+    } else {
+      applyHolidayPresetIfNeeded("");
     }
-    saveGuestDraft();
+    await persistTemplateState();
     showToast(`模板“${name}”已删除`);
   });
 

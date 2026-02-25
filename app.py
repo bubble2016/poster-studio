@@ -304,6 +304,7 @@ def _sanitize_runtime_cfg(raw_cfg):
     cfg["watermark_density"] = _coerce_float(cfg.get("watermark_density"), DEFAULT_CONFIG["watermark_density"], 0.5, 2.0)
     cfg["jpeg_quality"] = _coerce_int(cfg.get("jpeg_quality"), DEFAULT_CONFIG["jpeg_quality"], 1, 100)
     cfg["watermark_enabled"] = _coerce_bool(cfg.get("watermark_enabled"), DEFAULT_CONFIG["watermark_enabled"])
+    cfg["holiday_text_style"] = "festive"
     return cfg
 
 def _sanitize_user_id(user_id):
@@ -433,15 +434,18 @@ def _load_user_config(user_id):
     else:
         cfg = load_config(CONFIG_PATH)
     changed = False
-    if not user_config_exists:
-        if not cfg.get("bg_image_path"):
-            presets = list(PresetGenerator.get_presets(BASE_DIR).values())
-            if presets:
-                picked = random.choice(presets)
-                cfg["bg_mode"] = "preset"
-                cfg["bg_image_path"] = _public_path(picked)
-                changed = True
     default_logos = list(PresetGenerator.get_default_logos(BASE_DIR).values())
+    if not user_config_exists:
+        presets = list(PresetGenerator.get_presets(BASE_DIR).values())
+        if presets:
+            picked = random.choice(presets)
+            cfg["bg_mode"] = "preset"
+            cfg["bg_image_path"] = _public_path(picked)
+            changed = True
+        if default_logos:
+            picked_logo = random.choice(default_logos)
+            cfg["logo_image_path"] = _public_path(picked_logo)
+            changed = True
     legacy_default_names = {"default_logo_kraft_stamp.png"}
     current_logo = str(cfg.get("logo_image_path") or "").strip()
     current_logo_name = os.path.basename(current_logo.replace("\\", "/"))
@@ -469,14 +473,29 @@ def _load_user_config(user_id):
 
 def _safe_join_under(root_dir, relpath):
     root = os.path.abspath(root_dir)
-    abs_path = os.path.abspath(os.path.join(BASE_DIR, relpath))
+    abs_path = os.path.abspath(os.path.join(root, relpath))
     if abs_path == root or abs_path.startswith(root + os.sep):
         return abs_path
     return ""
 
 
 def _safe_join_data_path(relpath):
-    return _safe_join_under(DATA_DIR, relpath)
+    rel = str(relpath or "").replace("\\", "/").lstrip("/")
+    if not rel:
+        return ""
+    candidates = []
+    data_dir_name = os.path.basename(DATA_DIR).replace("\\", "/").strip("/")
+    if data_dir_name and rel == data_dir_name:
+        candidates.append("")
+    elif data_dir_name and rel.startswith(data_dir_name + "/"):
+        # Backward compatibility: allow BASE_DIR-relative payload like web_data/outputs/...
+        candidates.append(rel[len(data_dir_name) + 1 :])
+    candidates.append(rel)
+    for cand in candidates:
+        abs_path = _safe_join_under(DATA_DIR, cand)
+        if abs_path:
+            return abs_path
+    return ""
 
 
 def _is_owned_output(relpath, abs_path, user_id):
@@ -1008,7 +1027,7 @@ def api_admin_cleanup_guests():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     try:
-        days = int(data.get("days", 30))
+        days = int(data.get("days", 0))
     except (TypeError, ValueError):
         return jsonify({"error": "days 必须是数字"}), 400
     if days < 0 or days > 3650:

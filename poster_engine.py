@@ -113,11 +113,11 @@ SYSTEM_TEMPLATES = {
         "调价通知",
     ),
     "调价模板": (
-        f"【工厂黄板】：上调5 元/吨\n【手选黄板】：上调5 元/吨\n【统货花纸】：上调5 元/吨\n【统货书本】：上调5 元/吨\n【优质书本】：上调5 元/吨\n【精选报纸】：上调5 元/吨\n\n{DEFAULT_FOOTER}",
+        f"【工厂黄板】：上调30 元/吨\n【手选黄板】：上调30 元/吨\n【统货花纸】：上调30 元/吨\n【统货书本】：上调30 元/吨\n【优质书本】：上调30 元/吨\n【精选报纸】：上调30 元/吨\n\n{DEFAULT_FOOTER}",
         "调价通知",
     ),
     "放假模板": (
-        "尊敬的客户：\n春节将至，本店定于2026年1月26日（腊月二十七）起放假，2月4日（正月初八）正常开门收货。\n\n请各位老板合理安排送货时间。\n祝大家新春快乐，生意兴隆，阖家幸福！",
+        "各位客户、司机朋友：\n元宵佳节将至，本站安排如下：\n放假时间： 2026年3月3日（农历正月十五），全天放假。\n\n营业时间： 3月4日（农历正月十六） 起恢复正常收货、装卸及结算业务。\n\n请各位合作伙伴提前做好送货安排。\n\n祝元宵节快乐，阖家团圆，财源滚滚！",
         "放假通知",
     ),
 }
@@ -151,6 +151,7 @@ DEFAULT_CONFIG = {
     "last_content": "",
     "last_date": "",
     "last_title": "调价通知",
+    "last_template": "",
     "custom_templates": {},
     "export_format": "PNG",
     "jpeg_quality": 95,
@@ -158,6 +159,7 @@ DEFAULT_CONFIG = {
     "watermark_text": "仅供客户参考",
     "watermark_opacity": 0.15,
     "watermark_density": 1.0,
+    "holiday_text_style": "festive",
 }
 
 PRICE_STYLES = {
@@ -584,8 +586,8 @@ class PresetGenerator:
             ("preset_fluid_blue.png", "深海流体蓝", PresetGenerator.gen_fluid_blue),
             ("preset_misty_green.png", "晨雾森林绿", PresetGenerator.gen_misty_green),
             ("preset_neon_city.png", "霓虹赛博夜", PresetGenerator.gen_neon_city),
-            ("preset_recycled_paper.png", "再生纸纤维", PresetGenerator.gen_recycled_paper),
-            ("preset_crumpled_kraft.png", "揉皱牛皮纸", PresetGenerator.gen_crumpled_kraft),
+            ("preset_recycled_paper.png", "纤维遗迹", PresetGenerator.gen_recycled_paper),
+            ("preset_crumpled_kraft.png", "琥珀折痕", PresetGenerator.gen_crumpled_kraft),
             ("preset_aurora_cyan.png", "极光青域", PresetGenerator.gen_aurora_cyan),
         ]
         out = {}
@@ -769,7 +771,49 @@ def _apply_watermark(img, text, opacity=0.15, density=1.0):
     return Image.alpha_composite(img, layer)
 
 
-def _calculate_layout_lines(lines, cw, is_holiday_mode, get_font):
+def _adjust_cjk_line_breaks(wrapped_lines, td, font, content_width):
+    if len(wrapped_lines) <= 1:
+        return wrapped_lines
+
+    # 禁止行首出现收尾类标点；禁止行尾出现开头类标点（中文排版基本规则）
+    lead_forbidden = set("，。！？；：、）》】』」〕〉”’％%!?,.;:)]}")
+    tail_forbidden = set("（《【『「〔〈“‘([{")
+    lines = list(wrapped_lines)
+
+    for idx in range(1, len(lines)):
+        while lines[idx] and lines[idx][0] in lead_forbidden and lines[idx - 1]:
+            moved = lines[idx][0]
+            candidate = lines[idx - 1] + moved
+            if td.textlength(candidate, font=font) <= content_width:
+                lines[idx - 1] = candidate
+                lines[idx] = lines[idx][1:]
+            else:
+                break
+
+    for idx in range(0, len(lines) - 1):
+        while lines[idx] and lines[idx][-1] in tail_forbidden:
+            moved = lines[idx][-1]
+            candidate = moved + lines[idx + 1]
+            if td.textlength(candidate, font=font) <= content_width:
+                lines[idx] = lines[idx][:-1]
+                lines[idx + 1] = candidate
+            else:
+                break
+
+    return [x for x in lines if x]
+
+
+def _is_ascii_or_fullwidth_digit(ch):
+    return ("0" <= ch <= "9") or ("０" <= ch <= "９")
+
+
+def _is_date_token_char(ch):
+    if _is_ascii_or_fullwidth_digit(ch):
+        return True
+    return ch in {"年", "月", "日", "号", "-", "/", ".", "－", "／", "．"}
+
+
+def _calculate_layout_lines(lines, cw, is_holiday_mode, get_font, holiday_variant="official"):
     layout = []
     total_height = 0
     row_idx = 0
@@ -778,7 +822,10 @@ def _calculate_layout_lines(lines, cw, is_holiday_mode, get_font):
     for line in lines:
         line = line.strip()
         if not line:
-            h = 40 if is_holiday_mode else 10
+            if is_holiday_mode:
+                h = 54 if holiday_variant == "festive" else 48
+            else:
+                h = 10
             layout.append({"type": "space", "height": h})
             total_height += h
             continue
@@ -796,22 +843,65 @@ def _calculate_layout_lines(lines, cw, is_holiday_mode, get_font):
                  layout.append({"type": "space", "height": 20})
                  row_idx = 0
              
-             f = get_font(42, True) if is_note else get_font(38)
-             lh = 65 if (is_note or is_holiday_mode) else 55
+             is_holiday_salutation = is_holiday_mode and bool(re.match(r"^(尊敬的|亲爱的|各位|您好)", line))
+             is_holiday_blessing = is_holiday_mode and ("祝" in line and ("快乐" in line or "幸福" in line or "兴隆" in line))
+
+             if is_note:
+                 f = get_font(42, True)
+                 lh = 65
+             elif is_holiday_mode:
+                 if holiday_variant == "festive":
+                     f = get_font(43, is_holiday_salutation or is_holiday_blessing)
+                     lh = 74
+                 else:
+                     f = get_font(42, is_holiday_salutation)
+                     lh = 72
+             else:
+                 f = get_font(38)
+                 lh = 55
              
              chars, start = list(line), 0
              wrapped_lines = []
+             if is_holiday_mode:
+                 content_width = (cw - 180) if holiday_variant == "festive" else (cw - 170)
+                 base_size = 43 if holiday_variant == "festive" else 42
+             else:
+                 content_width = (cw - 120)
+                 base_size = 42 if is_note else 38
              while start < len(chars):
-                 est_len = int((cw - 120) / (42 if is_note else 38))
+                 est_len = int(content_width / base_size)
                  end = min(len(chars), start + est_len + 5)
-                 while end > start and td.textlength("".join(chars[start:end]), font=f) > (cw - 120):
+                 while end > start and td.textlength("".join(chars[start:end]), font=f) > content_width:
                      end -= 1
+
+                 # 中文排版断行约束：避免标点行首、开括号行尾、数字/日期被拆开。
+                 if end < len(chars):
+                     lead_forbidden = set("，。！？；：、）》】』」〕〉”’％%!?,.;:)]}")
+                     tail_forbidden = set("（《【『「〔〈“‘([{")
+                     while end > start + 1 and chars[end] in lead_forbidden:
+                         end -= 1
+                     while end > start + 1 and chars[end - 1] in tail_forbidden:
+                         end -= 1
+                     while end > start + 1 and _is_ascii_or_fullwidth_digit(chars[end - 1]) and _is_ascii_or_fullwidth_digit(chars[end]):
+                         end -= 1
+                     while end > start + 1 and _is_date_token_char(chars[end - 1]) and _is_date_token_char(chars[end]):
+                         end -= 1
+
                  if end == start: end += 1
                  wrapped_lines.append("".join(chars[start:end]))
                  start = end
+             wrapped_lines = _adjust_cjk_line_breaks(wrapped_lines, td, f, content_width)
              
              block_height = len(wrapped_lines) * lh
-             layout.append({"type": "text", "lines": wrapped_lines, "height": block_height, "lh": lh, "is_note": is_note})
+             layout.append({
+                 "type": "text",
+                 "lines": wrapped_lines,
+                 "height": block_height,
+                 "lh": lh,
+                 "is_note": is_note,
+                 "is_holiday_salutation": is_holiday_salutation,
+                 "is_holiday_blessing": is_holiday_blessing,
+             })
              total_height += block_height
 
     return layout, total_height
@@ -826,24 +916,24 @@ def draw_poster(content, date_str, title, cfg):
     theme_unit = _mix_with_white(theme_rgb, 0.62)
     row_bg_fixed = (249, 249, 249)
 
-    if cfg.get("bg_mode") == "preset" and cfg.get("bg_image_path"):
-        base = _load_image(cfg.get("bg_image_path")) or Image.new("RGB", (w, h), "#E0E0E0")
-        base = base.resize((w, h), Image.Resampling.LANCZOS)
-    elif cfg.get("bg_image_path"):
-        base = _load_image(cfg.get("bg_image_path"))
-        if base:
-            ratio = max(w / base.width, h / base.height)
-            nw, nh = int(base.width * ratio), int(base.height * ratio)
-            base = base.resize((nw, nh), Image.Resampling.LANCZOS).crop(
-                ((nw - w) // 2, (nh - h) // 2, (nw - w) // 2 + w, (nh - h) // 2 + h)
-            )
-            if cfg.get("bg_blur_radius"):
-                base = base.filter(ImageFilter.GaussianBlur(cfg["bg_blur_radius"]))
-            base = ImageEnhance.Brightness(base).enhance(float(cfg.get("bg_brightness", 1.0)))
-        else:
-            base = Image.new("RGB", (w, h), "#E0E0E0")
-    else:
+    base = None
+    if cfg.get("bg_image_path"):
+        loaded_bg = _load_image(cfg.get("bg_image_path"))
+        if loaded_bg:
+            if cfg.get("bg_mode") == "preset":
+                base = loaded_bg.resize((w, h), Image.Resampling.LANCZOS)
+            else:
+                ratio = max(w / loaded_bg.width, h / loaded_bg.height)
+                nw, nh = int(loaded_bg.width * ratio), int(loaded_bg.height * ratio)
+                base = loaded_bg.resize((nw, nh), Image.Resampling.LANCZOS).crop(
+                    ((nw - w) // 2, (nh - h) // 2, (nw - w) // 2 + w, (nh - h) // 2 + h)
+                )
+    if base is None:
         base = Image.new("RGB", (w, h), "#E0E0E0")
+    blur_radius = max(0.0, float(cfg.get("bg_blur_radius", 0)))
+    if blur_radius > 0:
+        base = base.filter(ImageFilter.GaussianBlur(blur_radius))
+    base = ImageEnhance.Brightness(base).enhance(float(cfg.get("bg_brightness", 1.0)))
     img = base.convert("RGBA")
 
     get_font = lambda size, bold=False: FontManager.get(FONT_CN_BOLD if bold else FONT_CN_REG, size)
@@ -856,7 +946,10 @@ def draw_poster(content, date_str, title, cfg):
     
     lines = (content or "").split("\n")
     is_holiday_mode = "放假" in (title or "")
-    layout_items, sim_y = _calculate_layout_lines(lines, cw, is_holiday_mode, get_font)
+    holiday_text_style = "festive" if is_holiday_mode else str(cfg.get("holiday_text_style", "festive") or "festive").strip().lower()
+    if holiday_text_style not in {"official", "festive"}:
+        holiday_text_style = "festive"
+    layout_items, sim_y = _calculate_layout_lines(lines, cw, is_holiday_mode, get_font, holiday_text_style)
 
 
     ch = min(1800, max(900, 500 + sim_y - 10 + 460))
@@ -1231,12 +1324,25 @@ def draw_poster(content, date_str, title, cfg):
         img.alpha_composite(logo_layer, (lx, int(ly - logo_half)))
 
     cur = cy + 190
-    draw.text((w // 2, cur), title or "调价通知", font=get_font(75, True), fill=("#F5F7FB" if is_dark_style else "black"), anchor="mt")
+    title_size = 81 if (is_holiday_mode and holiday_text_style == "festive") else (79 if is_holiday_mode else 75)
+    if is_holiday_mode and not is_dark_style:
+        title_color = "#8F1D1D" if holiday_text_style == "festive" else "#111827"
+    else:
+        title_color = "#F5F7FB" if is_dark_style else "black"
+    draw.text((w // 2, cur), title or "调价通知", font=get_font(title_size, True), fill=title_color, anchor="mt")
     cur += 100
-    draw.text((w // 2, cur), normalize_date_for_render(date_str), font=get_font(35), fill=("#B3BDC9" if is_dark_style else "gray"), anchor="mt")
+    if is_holiday_mode and not is_dark_style:
+        date_color = "#A16262" if holiday_text_style == "festive" else "#8B95A7"
+    else:
+        date_color = "#B3BDC9" if is_dark_style else "gray"
+    draw.text((w // 2, cur), normalize_date_for_render(date_str), font=get_font(35), fill=date_color, anchor="mt")
     cur += 60
-    draw.line([(cx + 50, cur), (cx + cw - 50, cur)], fill=(theme_unit if is_dark_style else "#F0F0F0"), width=3)
-    cur += 40
+    if is_holiday_mode and not is_dark_style:
+        divider_color = "#EFCACA" if holiday_text_style == "festive" else "#DFE4EC"
+    else:
+        divider_color = theme_unit if is_dark_style else "#F0F0F0"
+    draw.line([(cx + 50, cur), (cx + cw - 50, cur)], fill=divider_color, width=3)
+    cur += 50 if (is_holiday_mode and holiday_text_style == "festive") else 46
 
     row_idx = 0
 
@@ -1315,13 +1421,31 @@ def draw_poster(content, date_str, title, cfg):
             
         elif item["type"] == "text":
             is_note = item["is_note"]
-            c = "#FFB347" if is_note else ("#AAB6C5" if is_dark_style else "#666")
-            f = get_font(42, True) if is_note else get_font(38)
+            is_holiday_salutation = bool(item.get("is_holiday_salutation"))
+            is_holiday_blessing = bool(item.get("is_holiday_blessing"))
+            if is_note:
+                c = "#FFB347"
+                f = get_font(42, True)
+            elif is_holiday_mode and not is_dark_style:
+                if is_holiday_salutation:
+                    c = "#7A1E1E" if holiday_text_style == "festive" else "#374151"
+                    f = get_font(43 if holiday_text_style == "festive" else 42, True)
+                elif is_holiday_blessing:
+                    c = "#B45309" if holiday_text_style == "festive" else "#2F6F4F"
+                    f = get_font(43 if holiday_text_style == "festive" else 42, True)
+                else:
+                    c = "#6B3E3E" if holiday_text_style == "festive" else "#4B5563"
+                    f = get_font(43 if holiday_text_style == "festive" else 42)
+            else:
+                c = "#AAB6C5" if is_dark_style else "#666"
+                f = get_font(38)
             lh = item["lh"]
             
             for subline in item["lines"]:
                 draw.text((cx + 60, cur), subline, font=f, fill=c, anchor="lt")
                 cur += lh
+            if is_holiday_mode and not is_note:
+                cur += 6 if holiday_text_style == "festive" else 4
 
     fy = footer_start_y
     for x in range(cx + 40, cx + cw - 40, 20):

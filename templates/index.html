@@ -5,13 +5,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>包站公告发布系统 Web</title>
-  <link rel="icon" href="/favicon.ico?v=20260224v400" type="image/x-icon" />
+  <link rel="icon" href="/favicon.ico?v=20260225v421" type="image/x-icon" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
     href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=20260224v413" />
+  <link rel="stylesheet" href="/static/style.css?v=20260225v421" />
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 </head>
 
@@ -214,14 +214,11 @@
           <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPaneMedia"
             data-settings-tab="media">图片素材</button>
           <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsPaneParam"
-            data-settings-tab="param">水印设置</button>
+            data-settings-tab="param">参数设置</button>
         </div>
 
         <section id="settingsPaneBase" class="card modal-card settings-pane is-active" role="tabpanel"
           data-settings-pane="base">
-          <div class="section-head">
-            <h2>基础信息</h2>
-          </div>
           <label>店铺名称<input id="shopName" /></label>
           <label>联系电话<input id="phone" /></label>
           <label>地址<input id="address" /></label>
@@ -230,9 +227,6 @@
 
         <section id="settingsPaneStyle" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="style"
           hidden>
-          <div class="section-head">
-            <h2>视觉风格</h2>
-          </div>
           <div class="field-grid">
             <label class="theme-color-field">主题色
               <div class="theme-color-row">
@@ -242,19 +236,35 @@
               <div id="themePalette" class="theme-palette" aria-label="推荐主题色">
                 <button type="button" class="theme-swatch" data-color="#D32F2F" title="#D32F2F"
                   aria-label="推荐色 #D32F2F"></button>
-                <button type="button" class="theme-swatch" data-color="#2563EB" title="#2563EB"
-                  aria-label="推荐色 #2563EB"></button>
-                <button type="button" class="theme-swatch" data-color="#16A34A" title="#16A34A"
-                  aria-label="推荐色 #16A34A"></button>
+                <button type="button" class="theme-swatch" data-color="#E11D48" title="#E11D48"
+                  aria-label="推荐色 #E11D48"></button>
                 <button type="button" class="theme-swatch" data-color="#EA580C" title="#EA580C"
                   aria-label="推荐色 #EA580C"></button>
-                <button type="button" class="theme-swatch" data-color="#7C3AED" title="#7C3AED"
-                  aria-label="推荐色 #7C3AED"></button>
+                <button type="button" class="theme-swatch" data-color="#F59E0B" title="#F59E0B"
+                  aria-label="推荐色 #F59E0B"></button>
+                <button type="button" class="theme-swatch" data-color="#65A30D" title="#65A30D"
+                  aria-label="推荐色 #65A30D"></button>
+                <button type="button" class="theme-swatch" data-color="#16A34A" title="#16A34A"
+                  aria-label="推荐色 #16A34A"></button>
+                <button type="button" class="theme-swatch" data-color="#0D9488" title="#0D9488"
+                  aria-label="推荐色 #0D9488"></button>
+                <button type="button" class="theme-swatch" data-color="#2563EB" title="#2563EB"
+                  aria-label="推荐色 #2563EB"></button>
+                <button type="button" class="theme-swatch" data-color="#1D4ED8" title="#1D4ED8"
+                  aria-label="推荐色 #1D4ED8"></button>
                 <button type="button" class="theme-swatch" data-color="#0891B2" title="#0891B2"
                   aria-label="推荐色 #0891B2"></button>
+                <button type="button" class="theme-swatch" data-color="#7C3AED" title="#7C3AED"
+                  aria-label="推荐色 #7C3AED"></button>
+                <button type="button" class="theme-swatch" data-color="#9333EA" title="#9333EA"
+                  aria-label="推荐色 #9333EA"></button>
+                <button type="button" class="theme-swatch" data-color="#DB2777" title="#DB2777"
+                  aria-label="推荐色 #DB2777"></button>
+                <button type="button" class="theme-swatch" data-color="#475569" title="#475569"
+                  aria-label="推荐色 #475569"></button>
               </div>
             </label>
-            <label>卡片样式
+            <label>样式
               <select id="cardStyle">
                 <option value="single">单张</option>
                 <option value="stack">堆叠</option>
@@ -265,40 +275,25 @@
                 <option value="aurora">极光玻璃</option>
                 <option value="paper_relief">纸感浮雕</option>
               </select>
+              <div id="cardStyleGallery" class="card-style-gallery" role="listbox" aria-label="卡片样式预览"></div>
+              <p class="settings-inline-hint">点击小图即可切换样式</p>
             </label>
-            <label>价格颜色模式
+            <label>
+              <span class="range-label"><span>卡片透明度</span><span id="cardOpacityValue"
+                  class="range-value">100%</span></span>
+              <input id="cardOpacity" type="range" min="0.1" max="1" step="0.05" />
+            </label>
+            <label>价格色
               <select id="priceColorMode">
                 <option value="semantic">保留涨跌红绿</option>
                 <option value="theme">跟随主题色</option>
               </select>
             </label>
           </div>
-          <label>
-            <span class="range-label"><span>背景模糊</span><span id="bgBlurValue" class="range-value">0</span></span>
-            <input id="bgBlur" type="range" min="0" max="30" step="1" />
-          </label>
-          <label>
-            <span class="range-label"><span>背景亮度</span><span id="bgBrightnessValue"
-                class="range-value">1.00x</span></span>
-            <input id="bgBrightness" type="range" min="0.5" max="1.5" step="0.05" />
-          </label>
-          <label>
-            <span class="range-label"><span>卡片透明度</span><span id="cardOpacityValue"
-                class="range-value">100%</span></span>
-            <input id="cardOpacity" type="range" min="0.1" max="1" step="0.05" />
-          </label>
-          <label>
-            <span class="range-label"><span>印章透明度</span><span id="stampOpacityValue"
-                class="range-value">85%</span></span>
-            <input id="stampOpacity" type="range" min="0.1" max="1" step="0.05" />
-          </label>
         </section>
 
         <section id="settingsPaneMedia" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="media"
           hidden>
-          <div class="section-head">
-            <h2>图片素材</h2>
-          </div>
           <p>访客模式默认不显示 Logo。你可以在这里直接上传自己的包站 Logo、印章和二维码。</p>
           <div class="field-group">
             <label>背景预设</label>
@@ -381,9 +376,23 @@
 
         <section id="settingsPaneParam" class="card modal-card settings-pane" role="tabpanel" data-settings-pane="param"
           hidden>
-          <div class="section-head">
-            <h2>水印设置</h2>
-          </div>
+          <p class="settings-subhead">背景参数</p>
+          <label>
+            <span class="range-label"><span>背景模糊</span><span id="bgBlurValue" class="range-value">0</span></span>
+            <input id="bgBlur" type="range" min="0" max="30" step="1" />
+          </label>
+          <label>
+            <span class="range-label"><span>背景亮度</span><span id="bgBrightnessValue"
+                class="range-value">1.00x</span></span>
+            <input id="bgBrightness" type="range" min="0.5" max="1.5" step="0.05" />
+          </label>
+          <p class="settings-subhead">印章参数</p>
+          <label>
+            <span class="range-label"><span>印章透明度</span><span id="stampOpacityValue"
+                class="range-value">85%</span></span>
+            <input id="stampOpacity" type="range" min="0.1" max="1" step="0.05" />
+          </label>
+          <p class="settings-subhead">水印参数</p>
           <label class="switch-line">
             <input id="watermarkEnabled" type="checkbox" /> 启用水印
           </label>
@@ -478,12 +487,12 @@
           <div class="drawer-value-slot">
             <div id="priceDrawerValueNumberWrap">
               <label class="drawer-inline-field"><span class="drawer-field-label">值</span><input id="priceDrawerValue"
-                  placeholder="例如：1350" /></label>
+                  inputmode="decimal" placeholder="例如：1350" /></label>
             </div>
             <div id="priceDrawerValueRangeWrap" class="drawer-row drawer-range-wrap" hidden>
-              <input class="drawer-range-input" id="priceDrawerMin" />
+              <input class="drawer-range-input" id="priceDrawerMin" inputmode="decimal" />
               <span class="drawer-range-sep" aria-hidden="true">-</span>
-              <input class="drawer-range-input" id="priceDrawerMax" />
+              <input class="drawer-range-input" id="priceDrawerMax" inputmode="decimal" />
             </div>
             <div id="priceDrawerValueTextWrap" hidden>
               <label class="drawer-inline-field"><span class="drawer-field-label">说明</span><input id="priceDrawerText"
@@ -492,9 +501,8 @@
           </div>
         </div>
       </div>
-      <footer class="modal-actions modal-actions-3">
+      <footer class="modal-actions modal-actions-2">
         <button id="deletePriceDrawerBtn" class="danger" type="button">删除</button>
-        <button id="cancelPriceDrawerBtn" type="button">取消</button>
         <button id="savePriceDrawerBtn" class="primary" type="button">保存</button>
       </footer>
     </section>
@@ -521,7 +529,7 @@
     </section>
   </div>
 
-  <script src="/static/app.js?v=20260224v414"></script>
+  <script src="/static/app.js?v=20260225v421"></script>
 </body>
 
 </html>

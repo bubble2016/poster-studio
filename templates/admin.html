@@ -4,67 +4,107 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>管理后台 | 海报系统</title>
-  <link rel="icon" href="/favicon.ico?v=20260224v400" type="image/x-icon" />
+  <link rel="icon" href="/favicon.ico?v=20260225v421" type="image/x-icon" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #f5f7fb;
-      --ink: #0f172a;
-      --muted: #5b6478;
-      --line: #d9e2ef;
-      --primary: #0b8f7a;
-      --primary-strong: #087f6d;
-      --primary-soft: #0aa386;
+      --bg: #f8fafc;
+      --ink: #172554;
+      --muted: #475569;
+      --line: #dbe5f3;
+      --primary: #3b82f6;
+      --primary-strong: #2563eb;
+      --primary-soft: #60a5fa;
+      --accent: #f97316;
       --card: #ffffff;
       --ok: #0f9d58;
-      --err: #c62828;
-      --danger: #d7364f;
+      --err: #b91c1c;
+      --danger: #e11d48;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Noto Sans SC", sans-serif;
+      min-height: 100vh;
+      font-family: "Outfit", "Noto Sans SC", sans-serif;
       color: var(--ink);
       background:
-        radial-gradient(circle at 10% -20%, #cfe1ff 0%, transparent 45%),
-        radial-gradient(circle at 120% 20%, #d7f4e7 0%, transparent 40%),
+        radial-gradient(circle at 0% 0%, #dbeafe 0%, transparent 42%),
+        radial-gradient(circle at 100% -10%, #ffe9d6 0%, transparent 38%),
+        linear-gradient(180deg, #f8fbff 0%, #f6f9ff 100%),
         var(--bg);
     }
     body.no-scroll { overflow: hidden; }
     .shell {
-      width: min(1120px, calc(100% - 24px));
-      margin: 24px auto 40px;
+      width: min(1180px, calc(100% - 28px));
+      margin: 22px auto 44px;
       display: grid;
-      gap: 16px;
+      gap: 14px;
     }
     .top {
-      background: var(--card);
+      background: linear-gradient(140deg, #ffffff 0%, #f8fbff 100%);
       border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 16px;
+      border-radius: 20px;
+      padding: 20px;
       display: flex;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: 14px;
       align-items: center;
       justify-content: space-between;
+      box-shadow: 0 14px 38px rgba(15, 23, 42, 0.07);
+      position: relative;
+      overflow: hidden;
+    }
+    .top::after {
+      content: "";
+      position: absolute;
+      right: -28px;
+      top: -28px;
+      width: 170px;
+      height: 170px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.16) 0%, rgba(59, 130, 246, 0) 70%);
+      pointer-events: none;
     }
     .title {
       margin: 0;
-      font-family: Outfit, sans-serif;
-      font-size: clamp(1.1rem, 2.2vw, 1.5rem);
+      font-size: clamp(1.16rem, 2.4vw, 1.68rem);
+      letter-spacing: 0.02em;
     }
     .sub {
-      margin: 4px 0 0;
+      margin: 6px 0 0;
       color: var(--muted);
-      font-size: .92rem;
+      font-size: 0.92rem;
+      line-height: 1.6;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid #c9daf8;
+      color: #1e3a8a;
+      background: #eff6ff;
+      font-size: 0.76rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
     .panel {
-      background: var(--card);
+      background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
       border: 1px solid var(--line);
-      border-radius: 16px;
+      border-radius: 18px;
       padding: 16px;
+      box-shadow: 0 8px 30px rgba(30, 41, 59, 0.06);
+    }
+    .panel-title {
+      margin: 0 0 12px;
+      font-size: 0.95rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #1e3a8a;
     }
     .row {
       display: flex;
@@ -74,63 +114,101 @@
     }
     .token {
       flex: 1;
-      min-width: 260px;
-      height: 42px;
+      min-width: 280px;
+      height: 44px;
       border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 0 12px;
+      border-radius: 12px;
+      padding: 0 13px;
       font-size: 16px;
       font-family: inherit;
+      background: #ffffff;
+      color: #1e293b;
     }
     button {
       min-height: 44px;
       border: 1px solid transparent;
       border-radius: 12px;
-      padding: 0 14px;
-      font-size: .92rem;
+      padding: 0 15px;
+      font-size: 0.9rem;
       font-weight: 600;
-      font-family: "Noto Sans SC", sans-serif;
+      font-family: "Outfit", "Noto Sans SC", sans-serif;
       cursor: pointer;
-      background: #eef4ff;
-      color: #1a3b78;
-      transition: transform .16s ease, background-color .16s ease, border-color .16s ease, color .16s ease;
+      background: #eff6ff;
+      color: #1e3a8a;
+      transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease, color .18s ease;
     }
+    button:hover { transform: translateY(-1px); box-shadow: 0 7px 18px rgba(59, 130, 246, 0.16); }
     button:active { transform: translateY(1px); }
-    button.primary { background: linear-gradient(90deg, var(--primary-strong), var(--primary-soft)); color: #fff; }
-    button.ghost { background: #fff; border-color: var(--line); color: #1f2940; }
-    button.danger { background: #fff3f5; border-color: #f2c4cc; color: #9f1239; }
-    button.ghost:hover { background: #f8fbff; border-color: #c7d4e5; }
-    button.danger:hover { background: #ffecef; border-color: #ebabb8; }
+    button.primary {
+      background: linear-gradient(105deg, var(--primary-strong), var(--primary-soft));
+      color: #fff;
+      box-shadow: 0 10px 20px rgba(59, 130, 246, 0.32);
+    }
+    button.ghost { background: #ffffff; border-color: var(--line); color: #334155; }
+    button.danger { background: #fff3f5; border-color: #fecdd3; color: #9f1239; }
+    button.ghost:hover { background: #f8fbff; border-color: #bfd2ea; color: #1f3a72; }
+    button.danger:hover { background: #ffecef; border-color: #fda4af; box-shadow: 0 8px 18px rgba(190, 24, 93, 0.14); }
     button:disabled { opacity: .6; cursor: not-allowed; }
     button:focus-visible,
     input:focus-visible,
     a:focus-visible {
-      outline: 2px solid #0f8b76;
+      outline: 2px solid #3b82f6;
       outline-offset: 2px;
     }
     .status {
       margin-top: 10px;
-      font-size: .9rem;
+      font-size: 0.9rem;
       color: var(--muted);
-      min-height: 20px;
+      min-height: 22px;
+      padding: 7px 10px;
+      border-radius: 10px;
+      background: #f8fafc;
+      border: 1px dashed #d6e3f5;
     }
-    .status.ok { color: var(--ok); }
-    .status.err { color: var(--err); }
-    .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 12px; }
-    table { width: 100%; border-collapse: collapse; min-width: 760px; background: #fff; }
-    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #e9eef6; font-size: .9rem; }
-    th { background: #f7faff; color: #33415f; font-weight: 700; }
-    tbody tr:hover { background: #f9fbff; }
+    .status.ok { color: var(--ok); background: #effcf5; border-color: #b7edcf; }
+    .status.err { color: var(--err); background: #fff2f2; border-color: #fecaca; }
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    }
+    table { width: 100%; border-collapse: collapse; min-width: 780px; background: #fff; }
+    th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid #eaf0f8; font-size: 0.89rem; }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: linear-gradient(180deg, #f8fbff 0%, #eff5ff 100%);
+      color: #33415f;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    tbody tr:hover { background: #f8fbff; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85rem; }
-    .hint { color: var(--muted); font-size: .86rem; margin: 0; }
+    .hint { color: var(--muted); font-size: 0.84rem; margin: 0; line-height: 1.6; }
+    .hint-strong { color: #1e3a8a; font-weight: 600; }
     .pill {
       display: inline-block;
       border-radius: 999px;
-      padding: 2px 9px;
-      font-size: .8rem;
-      background: #eaf7f4;
-      color: #176659;
+      padding: 4px 10px;
+      font-size: 0.78rem;
+      background: #e8f0ff;
+      color: #1d4ed8;
+      border: 1px solid #cbdbfb;
       text-decoration: none;
+    }
+    .pill-link {
+      background: #fff;
+      color: #1e3a8a;
+      border: 1px solid #bfdbfe;
+      font-weight: 600;
+      transition: all .18s ease;
+    }
+    .pill-link:hover {
+      transform: translateY(-1px);
+      background: #f1f6ff;
+      box-shadow: 0 8px 16px rgba(30, 64, 175, 0.12);
     }
     .row-op {
       min-height: 32px;
@@ -138,22 +216,22 @@
       padding: 0 10px;
       margin: 2px 4px 2px 0;
       font-size: .84rem;
-      border: 1px solid #c9d7e8;
+      border: 1px solid #cbdcf4;
       background: #f8fbff;
-      color: #334155;
+      color: #1e3a8a;
     }
     .row-op:hover {
-      border-color: #a4b9d2;
-      background: #eef5ff;
+      border-color: #93b4e4;
+      background: #edf4ff;
       color: #0f3f72;
     }
     .row-op-danger {
-      border-color: #f2c4cc;
+      border-color: #fecdd3;
       background: #fff3f5;
       color: #9f1239;
     }
     .row-op-danger:hover {
-      border-color: #ebabb8;
+      border-color: #fda4af;
       background: #ffecef;
     }
     .admin-modal.hidden { display: none; }
@@ -176,11 +254,11 @@
       width: min(520px, calc(100vw - 24px));
       max-height: calc(100vh - 32px);
       overflow: auto;
-      background: linear-gradient(180deg, #f9fbff 0%, #f3f7fe 100%);
-      border: 1px solid var(--line);
-      border-radius: 16px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      border: 1px solid #d7e5fa;
+      border-radius: 18px;
       box-shadow: 0 14px 40px rgba(15, 23, 42, .18);
-      padding: 14px;
+      padding: 16px;
       display: grid;
       gap: 10px;
     }
@@ -211,11 +289,16 @@
       gap: 8px;
     }
     @media (max-width: 720px) {
-      .shell { width: calc(100% - 16px); margin-top: 12px; }
-      .top, .panel { padding: 12px; border-radius: 12px; }
+      .shell { width: calc(100% - 14px); margin-top: 12px; }
+      .top, .panel { padding: 12px; border-radius: 14px; }
+      .title { font-size: 1.08rem; }
+      .sub { font-size: 0.86rem; }
       .token { min-width: 0; width: 100%; }
       .row { align-items: stretch; }
       button { width: 100%; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; animation: none !important; }
     }
   </style>
 </head>
@@ -223,13 +306,15 @@
   <main class="shell">
     <section class="top">
       <div>
+        <span class="badge">Admin Console</span>
         <h1 class="title">管理后台</h1>
         <p class="sub">用户总览与数据导出、备份</p>
       </div>
-      <a href="/" class="pill">返回主系统</a>
+      <a href="/" class="pill pill-link">返回主系统</a>
     </section>
 
     <section class="panel">
+      <h2 class="panel-title">鉴权与状态</h2>
       <div class="row">
         <input id="tokenInput" class="token" type="password" placeholder="输入 POSTER_ADMIN_TOKEN" autocomplete="off" />
         <button id="loadUsersBtn" class="primary" type="button">刷新用户列表</button>
@@ -239,6 +324,7 @@
     </section>
 
     <section class="panel">
+      <h2 class="panel-title">导出与备份</h2>
       <div class="row" style="margin-bottom: 10px;">
         <button id="exportJsonBtn" class="ghost" type="button">查看 JSON</button>
         <button id="downloadExportBtn" class="ghost" type="button">下载 JSON</button>
@@ -249,15 +335,18 @@
     </section>
 
     <section class="panel">
+      <h2 class="panel-title">访客清理</h2>
       <div class="row">
-        <input id="cleanupDaysInput" class="token" type="number" min="0" max="3650" value="30" placeholder="清理多少天前未活跃的访客" />
+        <input id="cleanupDaysInput" class="token" type="number" min="0" max="3650" value="0" placeholder="清理多少天前未活跃的访客（0=全部）" />
         <button id="cleanupGuestsBtn" class="ghost" type="button">清理访客（保留导出文件）</button>
         <button id="cleanupGuestsWithOutputsBtn" class="ghost" type="button">清理访客（含导出文件）</button>
       </div>
-      <p class="hint">仅清理 `guest_` 账号。按最后活跃时间判断（配置文件或导出记录）。</p>
+      <p class="hint"><span class="hint-strong">规则：</span>仅清理 `guest_` 账号；按“最后活跃时间”判断（配置文件修改时间或导出记录时间，以较新者为准）。</p>
+      <p class="hint"><span class="hint-strong">示例：</span>`0`=清理全部访客；`7`=清理 7 天前及更早未活跃的访客；`30`=清理 30 天前及更早未活跃的访客。</p>
     </section>
 
     <section class="panel">
+      <h2 class="panel-title">用户与操作</h2>
       <div class="row" style="justify-content: space-between; margin-bottom: 10px;">
         <strong>用户列表</strong>
         <span id="totalText" class="pill">总数 0</span>
@@ -295,7 +384,7 @@
       </footer>
     </section>
   </div>
-  <script src="/static/admin.js?v=20260224v400"></script>
+  <script src="/static/admin.js?v=20260225v421"></script>
 </body>
 </html>
 

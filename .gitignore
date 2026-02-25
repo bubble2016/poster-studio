@@ -1,5 +1,7 @@
 web_data/
 __pycache__/
 *.pyc
-tests/__pycache__/
 .pytest_cache/
+.tmp_compress/
+.playwright-cli/
+output/
