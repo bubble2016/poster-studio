@@ -3366,3 +3366,64 @@ body.is-desktop-preview-focus .editor-col {
     display: none;
   }
 }
+
+.loading-runway-wrap {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: auto;
+  --primary: rgba(var(--primary-rgb), 0.65);
+  --primary-strong: rgba(var(--primary-rgb), 0.85);
+  --primary-soft: rgba(var(--primary-rgb), 0.45);
+}
+
+.loading-runway {
+  width: 100%;
+  height: 3px;
+  background: #cbd5e1;
+  border-radius: 2px;
+  position: relative;
+  margin-top: 50px;
+  margin-bottom: 24px;
+}
+
+.loading-runway::after {
+  content: "";
+  position: absolute;
+  bottom: -3px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(15, 23, 42, 0.05);
+}
+
+.forklift-group {
+  position: absolute;
+  bottom: 0px;
+  left: 0%;
+  width: 110px;
+  height: auto;
+  transform: translateX(0%);
+  transition: left 0.15s linear, transform 0.15s linear;
+  display: flex;
+  align-items: flex-end;
+}
+
+.forklift-svg {
+  width: 100%;
+  display: block;
+  transform-origin: bottom center;
+}
+
+.preview-loading-text {
+  position: relative;
+  z-index: 2;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}

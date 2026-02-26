@@ -2405,16 +2405,57 @@ function openLogoCropModal(file) {
   reader.readAsDataURL(file);
 }
 
+let previewMockProgressTimer = 0;
+let previewMockProgressValue = 0;
+
+function _updatePreviewProgress(val, overrideText = "") {
+  const p = Math.floor(val);
+  const textEl = document.querySelector(".preview-loading-text");
+  if (textEl) {
+    if (overrideText) textEl.textContent = overrideText;
+    else textEl.textContent = `正在打包生成 ${p}%`;
+  }
+  const forklift = $("forkliftGroup");
+  if (forklift) {
+    forklift.style.left = `${p}%`;
+    forklift.style.transform = `translateX(-${p}%)`;
+  }
+}
+
+function _stopPreviewMockProgress() {
+  if (previewMockProgressTimer) {
+    clearInterval(previewMockProgressTimer);
+    previewMockProgressTimer = 0;
+  }
+}
+
 function setPreviewLoading(text = "正在生成预览...") {
   $("previewStage").classList.remove("is-loaded");
   $("previewStage").classList.add("is-loading");
-  const textEl = document.querySelector(".preview-loading-text");
-  if (textEl) textEl.textContent = text;
+
+  _stopPreviewMockProgress();
+  previewMockProgressValue = 0;
+
+  if (text === "正在生成预览...") {
+    _updatePreviewProgress(0);
+    previewMockProgressTimer = setInterval(() => {
+      previewMockProgressValue += Math.random() * 6 + 3;
+      if (previewMockProgressValue > 95) previewMockProgressValue = 95;
+      _updatePreviewProgress(previewMockProgressValue);
+    }, 150);
+  } else {
+    _updatePreviewProgress(previewMockProgressValue, text);
+  }
 }
 
 function setPreviewLoaded() {
-  $("previewStage").classList.remove("is-loading");
-  $("previewStage").classList.add("is-loaded");
+  _stopPreviewMockProgress();
+  previewMockProgressValue = 100;
+  _updatePreviewProgress(100);
+  setTimeout(() => {
+    $("previewStage").classList.remove("is-loading");
+    $("previewStage").classList.add("is-loaded");
+  }, 200);
 }
 
 function clearPreviewSlowHintTimer() {
@@ -2430,8 +2471,8 @@ function startPreviewSlowHintTimer(seq) {
     previewSlowHintTimer = 0;
     if (seq !== state.previewSeq) return;
     $("statusText").textContent = PREVIEW_SLOW_HINT_TEXT;
-    const textEl = document.querySelector(".preview-loading-text");
-    if (textEl) textEl.textContent = PREVIEW_SLOW_HINT_TEXT;
+    _updatePreviewProgress(previewMockProgressValue, PREVIEW_SLOW_HINT_TEXT);
+    _stopPreviewMockProgress();
   }, PREVIEW_SLOW_HINT_DELAY_MS);
 }
 
