@@ -1,38 +1,38 @@
 # Poster Studio
 
-> 打包站公告海报生成工具（Web）
+> 打包站公告海报生成工具（Web�?
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](#)
 [![Flask](https://img.shields.io/badge/Flask-Web-000000?logo=flask&logoColor=white)](#)
 [![Status](https://img.shields.io/badge/Status-Active-0b8f7a)](#)
 
-## ✨ 项目简介
+## �?项目简�?
 
-Poster Studio 是一款面向打包站与中小商家的公告海报生成工具，支持实时预览、模板复用、批量调价和一键导出，适合高频公告发布场景。  
-你可以快速输入当天价格信息，生成规范海报并直接下载或分发。
+Poster Studio 是一款面向打包站与中小商家的公告海报生成工具，支持实时预览、模板复用、批量调价和一键导出，适合高频公告发布场景�? 
+你可以快速输入当天价格信息，生成规范海报并直接下载或分发�?
 
-## 🖼️ 界面截图
+## 🖼�?界面截图
 
-### 1) 首页（桌面端）
-![首页-桌面端](output/playwright/screenshots/home-desktop.png)
+### 1) 首页（桌面端�?
+![首页-桌面端](docs/screenshots/home-desktop.png)
 
 ### 2) 设置面板
-![设置面板](output/playwright/screenshots/settings-modal.png)
+![设置面板](docs/screenshots/settings-modal.png)
 
-### 3) 首页（移动端）
-![首页-移动端](output/playwright/screenshots/home-mobile.png)
+### 3) 首页（移动端�?
+![首页-移动端](docs/screenshots/home-mobile.png)
 
 ## 🚀 核心功能
 
-- 🧩 模板管理：系统模板 + 自定义模板（保存、切换、删除）
-- 👀 实时预览：输入即预览，支持全屏查看
-- 💹 价格编辑：结构化价格表、拖拽排序、批量调价
-- 🎨 视觉设置：主题色、卡片样式、背景参数、印章参数
-- 🖼️ 素材上传：背景图 / Logo / 印章 / 二维码（含裁剪）
-- 🛡️ 账号与草稿：访客草稿、本地续编、登录后继续编辑
+- 🧩 模板管理：系统模�?+ 自定义模板（保存、切换、删除）
+- 👀 实时预览：输入即预览，支持全屏查�?
+- 💹 价格编辑：结构化价格表、拖拽排序、批量调�?
+- 🎨 视觉设置：主题色、卡片样式、背景参数、印章参�?
+- 🖼�?素材上传：背景图 / Logo / 印章 / 二维码（含裁剪）
+- 🛡�?账号与草稿：访客草稿、本地续编、登录后继续编辑
 - 📦 多格式导出：`PNG` / `JPEG` / `PDF`
 
-## 🛠️ 快速启动
+## 🛠�?快速启�?
 
 ### 1. 安装依赖
 ```bash
@@ -44,7 +44,7 @@ py -m pip install -r requirements.txt
 py app.py
 ```
 
-### 3. 打开浏览器
+### 3. 打开浏览�?
 访问：`http://127.0.0.1:5173`
 
 ## 📂 目录结构
@@ -54,7 +54,7 @@ py app.py
 ├─ app.py                  # Web 服务入口
 ├─ poster_engine.py        # 海报渲染核心
 ├─ templates/              # 页面模板
-├─ static/                 # 前端脚本与样式
+├─ static/                 # 前端脚本与样�?
 ├─ presets/                # 背景预设资源
 ├─ fonts/                  # 字体资源
 ├─ web_data/               # 配置、上传与导出数据
@@ -66,9 +66,9 @@ py app.py
 - 上传目录：`web_data/uploads/`
 - 导出目录：`web_data/outputs/`
 
-## 🔐 合规与安全
+## 🔐 合规与安�?
 
-- 提供用户协议与隐私政策页面入口
+- 提供用户协议与隐私政策页面入�?
 - 上传素材有类型与体积限制
 
 ## 📘 相关文档
