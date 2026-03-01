@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg: #f5f7fb;
   --text: #0f172a;
   --muted: #64748b;
@@ -469,6 +469,19 @@ p {
   transition: max-height .26s ease, opacity .16s ease, transform .16s ease, margin .16s ease, padding .16s ease, visibility 0s linear .26s;
 }
 
+html[data-tm-collapsed="1"] .template-manager-card:not(.is-ready) .template-manager-body {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  overflow: hidden;
+  pointer-events: none;
+  visibility: hidden;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
 .template-manager-tip {
   position: absolute;
   bottom: calc(100% + 8px);
@@ -727,6 +740,27 @@ button {
   font-family: inherit;
 }
 
+input,
+textarea,
+select {
+  transition: border-color .18s ease, box-shadow .22s ease, background-color .18s ease;
+}
+
+input:not([type="range"]):not([type="checkbox"]):not([type="file"]):not([type="color"]):focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: rgba(var(--primary-rgb), .32);
+  box-shadow: inset 0 0 10px rgba(var(--primary-rgb), .09);
+}
+
+input:not([type="range"]):not([type="checkbox"]):not([type="file"]):not([type="color"]):focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  border-color: rgba(var(--primary-rgb), .38);
+  box-shadow: inset 0 0 12px rgba(var(--primary-rgb), .11);
+}
+
 textarea {
   resize: vertical;
   min-height: 180px;
@@ -972,7 +1006,6 @@ button:disabled {
   animation: settings-icon-pulse 1.9s cubic-bezier(.4, 0, .2, 1) infinite;
   fill: #6f8095;
   filter: drop-shadow(0 0 0 rgba(var(--primary-rgb), 0));
-  will-change: filter, fill, opacity, transform;
 }
 
 .icon-btn:hover {
@@ -1018,6 +1051,26 @@ button:disabled {
     filter: none;
   }
 
+  .card,
+  .modal-panel,
+  .toast,
+  .toast.is-fading,
+  .preview-focus-toast.is-visible,
+  .fullscreen-exit-hint.is-visible,
+  .skeleton-poster,
+  .settings-pane,
+  .template-manager-tip,
+  .loading-runway-wrap *,
+  .forklift-group {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .preview-focus-toast,
+  .fullscreen-exit-hint {
+    opacity: 1;
+  }
+
   .settings-tabs {
     transition: none;
   }
@@ -1025,11 +1078,8 @@ button:disabled {
 
 .icon-btn:focus-visible,
 .ghost-btn:focus-visible,
-button:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
-  outline: 2px solid #0f8b76;
+button:focus-visible {
+  outline: 2px solid rgba(var(--primary-rgb), .78);
   outline-offset: 2px;
 }
 
@@ -1100,27 +1150,32 @@ select:focus-visible {
   -webkit-overflow-scrolling: touch;
 }
 
+#settingsModal .modal-body {
+  padding-top: 0;
+}
+
 .settings-tabs {
+  --settings-tabs-height: 53px;
   position: sticky;
   top: 0;
   z-index: 2;
-  display: flex;
-  overflow-x: auto;
-  white-space: nowrap;
-  gap: 8px;
-  margin-bottom: 10px;
-  padding: 2px;
-  background: rgba(249, 251, 255, .88);
-  backdrop-filter: blur(6px);
-  scrollbar-width: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  max-height: var(--settings-tabs-height);
+  margin: 0 -12px 12px;
+  padding: 0 12px;
+  background: #eef2f8;
+  border-bottom: 1px solid #dbe3ef;
+  overflow: hidden;
   opacity: 1;
-  transform: translateY(0);
-  transition: transform .22s ease, opacity .18s ease;
-  will-change: transform, opacity;
+  transition: max-height .22s ease, opacity .18s ease, margin-bottom .22s ease, border-color .18s ease;
 }
 
 .settings-tabs.is-auto-hidden {
-  transform: translateY(calc(-100% - 8px));
+  max-height: 0;
+  margin-bottom: 0;
+  border-bottom-color: transparent;
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
@@ -1131,25 +1186,29 @@ select:focus-visible {
 }
 
 .settings-tab {
-  flex: 0 0 auto;
-  width: auto;
-  min-width: 88px;
-  min-height: 38px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(var(--primary-rgb), .26);
-  background: rgba(var(--primary-rgb), .08);
-  color: var(--primary-strong);
-  font-size: .9rem;
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  padding: 14px 6px 13px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #475569;
+  font-size: .96rem;
   font-weight: 600;
+  box-shadow: inset 0 -2px 0 transparent;
   -webkit-tap-highlight-color: transparent;
 }
 
 .settings-tab.is-active {
-  background: linear-gradient(90deg, var(--primary-strong), var(--primary-soft));
-  color: #fff;
-  border-color: transparent;
-  box-shadow: 0 8px 16px rgba(var(--primary-rgb), .28);
+  background: transparent;
+  color: #315fd8;
+  box-shadow: inset 0 -3px 0 #4b73e8;
+}
+
+.settings-tab:hover {
+  background: rgba(255, 255, 255, .34);
 }
 
 .settings-pane {
@@ -1421,7 +1480,7 @@ select:focus-visible {
 }
 
 .preset-item.is-active::after {
-  content: "✓";
+  content: "鉁?;
   position: absolute;
   top: 4px;
   right: 4px;
@@ -2058,6 +2117,86 @@ select:focus-visible {
   margin: 0 auto;
 }
 
+#dialogModal.is-wechat-save-dialog #closeDialogBtn {
+  display: none;
+}
+
+#dialogModal.is-wechat-save-dialog .modal-body {
+  padding-top: 12px;
+  padding-bottom: 14px;
+}
+
+#dialogModal.is-wechat-save-dialog .dialog-panel {
+  left: 18px;
+  right: 18px;
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#dialogModal.is-wechat-save-dialog .modal-head {
+  justify-content: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(226, 232, 240, .9);
+}
+
+#dialogModal.is-wechat-save-dialog #dialogTitle {
+  width: 100%;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+
+#dialogModal.is-wechat-save-dialog .modal-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding-top: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .92), rgba(248, 250, 252, .98));
+  border-top: 1px solid rgba(226, 232, 240, .95);
+}
+
+#dialogModal.is-wechat-save-dialog .modal-actions > button {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 12px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+#dialogModal.is-wechat-save-dialog #dialogCancelBtn {
+  border: 1px solid #d7dee7;
+  background: #f8fafc;
+  color: #475569;
+}
+
+#dialogModal.is-wechat-save-dialog #dialogConfirmBtn {
+  background: linear-gradient(180deg, #1aad19, #169714);
+  color: #fff;
+  border: 1px solid rgba(22, 151, 20, .95);
+  box-shadow: 0 8px 18px rgba(26, 173, 25, .18);
+}
+
+#dialogModal.is-wechat-save-dialog #dialogConfirmBtn:active {
+  background: linear-gradient(180deg, #169714, #138311);
+}
+
+.wechat-save-guide {
+  display: grid;
+  gap: 0;
+  justify-items: center;
+}
+
+.wechat-save-guide__image {
+  display: block;
+  width: 100%;
+  max-height: min(64vh, 560px);
+  object-fit: contain;
+  object-position: center;
+  border-radius: 12px;
+  background: #f4f6f8;
+}
+
 .crop-tip {
   margin: 0 0 10px;
   color: #64748b;
@@ -2357,13 +2496,11 @@ body.has-floating-select #templateManagerBody.template-manager-body {
 .action-bar-link {
   color: #0f4f89;
   text-decoration: none;
-  border-bottom: 1px dashed rgba(15, 79, 137, .35);
   pointer-events: auto;
 }
 
 .action-bar-link:hover {
   color: #0a3a66;
-  border-bottom-color: rgba(10, 58, 102, .6);
 }
 
 .action-bar-link:focus-visible {
@@ -2407,7 +2544,7 @@ body.is-desktop-preview-focus .preview-card {
   z-index: 260;
 }
 
-/* 全屏退出提示浮层 */
+/* 鍏ㄥ睆閫€鍑烘彁绀烘诞灞?*/
 .fullscreen-exit-hint {
   position: absolute;
   top: 10px;
@@ -2802,6 +2939,20 @@ body.is-desktop-preview-focus .editor-col {
 }
 
 @media (max-width: 560px) {
+  .action-bar-note {
+    row-gap: 2px;
+  }
+
+  .action-bar-sep-record {
+    display: none;
+  }
+
+  .action-bar-record {
+    flex-basis: 100%;
+    order: 10;
+    text-align: center;
+  }
+
   .price-range-wrap {
     grid-template-columns: 1fr;
   }
@@ -3074,19 +3225,16 @@ body.is-desktop-preview-focus .editor-col {
 
 @media (max-width: 460px) {
   .settings-tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    overflow: visible;
-    white-space: normal;
-    padding: 0;
+    --settings-tabs-height: 49px;
+    margin-left: -12px;
+    margin-right: -12px;
+    padding: 0 8px;
   }
 
   .settings-tab {
-    width: 100%;
-    min-width: 0;
-    justify-content: center;
-    padding: 8px 10px;
+    min-height: 48px;
+    padding: 12px 2px 11px;
+    font-size: .82rem;
   }
 
   .action-bar .pill-btn {
@@ -3276,6 +3424,26 @@ body.is-desktop-preview-focus .editor-col {
     width: min(230px, calc(100vw - 38px));
   }
 
+  .card,
+  .modal-card,
+  .template-manager-body .tm-select-panel,
+  .settings-tabs {
+    backdrop-filter: none;
+  }
+
+  .card {
+    box-shadow: 0 8px 20px rgba(15, 23, 42, .05);
+  }
+
+  .modal-mask {
+    backdrop-filter: none;
+    background: rgba(15, 23, 42, .34);
+  }
+
+  .modal-panel {
+    box-shadow: 0 -10px 24px rgba(15, 23, 42, .14);
+  }
+
   body.preview-focus {
     overflow: hidden;
   }
@@ -3404,19 +3572,24 @@ body.is-desktop-preview-focus .editor-col {
 .forklift-group {
   position: absolute;
   bottom: 0px;
-  left: 0%;
-  width: 110px;
+  left: 0;
+  width: 88px;
   height: auto;
-  transform: translateX(0%);
-  transition: left 0.15s linear, transform 0.15s linear;
+  transform: translate3d(0, 0, 0);
+  transition: transform 0.15s linear;
   display: flex;
   align-items: flex-end;
+}
+
+.preview-stage.is-loading .forklift-group {
+  will-change: transform;
 }
 
 .forklift-svg {
   width: 100%;
   display: block;
-  transform-origin: bottom center;
+  transform-origin: left bottom;
+  transform: scaleX(0.82);
 }
 
 .preview-loading-text {
@@ -3427,3 +3600,4 @@ body.is-desktop-preview-focus .editor-col {
   font-weight: 600;
   letter-spacing: 0.03em;
 }
+

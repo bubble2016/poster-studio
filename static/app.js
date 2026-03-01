@@ -65,6 +65,9 @@ let mobilePreviewLastTapAt = 0;
 let mobilePreviewLastTapPos = null;
 let previewFocusToastTimer = 0;
 let previewSlowHintTimer = 0;
+let previewRunwayMaxTravelPx = 0;
+let pageScrollSyncRaf = 0;
+let guestDraftSaveTimer = 0;
 let activeSettingsTab = "base";
 let settingsTabsLastScrollTop = 0;
 let settingsTabsAutoHidden = false;
@@ -72,6 +75,9 @@ let settingsTabsScrollDownAcc = 0;
 let settingsTabsScrollUpAcc = 0;
 let settingsTabsToggleLockUntil = 0;
 let settingsConfigSnapshot = null;
+let lastGuestDraftConfigSnapshot = "";
+let lastPreviewPayloadSnapshot = "";
+let previewInFlightPayloadSnapshot = "";
 const SETTINGS_TABS_MIN_DELTA = 2;
 const SETTINGS_TABS_HIDE_SCROLL_PX = 56;
 const SETTINGS_TABS_SHOW_SCROLL_PX = 36;
@@ -187,6 +193,18 @@ function toDayKey(date = new Date()) {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+function isValidYmdDate(text) {
+  const m = String(text || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return false;
+  const y = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (!Number.isInteger(y) || !Number.isInteger(month) || !Number.isInteger(day)) return false;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const dt = new Date(Date.UTC(y, month - 1, day));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() + 1 === month && dt.getUTCDate() === day;
 }
 
 function normalizeDateInputForRollover(raw, baseDate = new Date()) {
@@ -480,6 +498,14 @@ function hasAnyModalOpen() {
   return [$("settingsModal"), $("loginModal"), $("logoCropModal"), $("dialogModal"), $("priceRowDrawerModal")].some((el) => el && !el.classList.contains("hidden"));
 }
 
+function setModalVisibility(modalOrId, visible) {
+  const modal = typeof modalOrId === "string" ? $(modalOrId) : modalOrId;
+  if (!modal) return;
+  const show = !!visible;
+  modal.classList.toggle("hidden", !show);
+  modal.setAttribute("aria-hidden", show ? "false" : "true");
+}
+
 function openDialog(options = {}) {
   const modal = $("dialogModal");
   const title = $("dialogTitle");
@@ -502,15 +528,16 @@ function openDialog(options = {}) {
   confirmBtn.textContent = options.confirmText || "确定";
   cancelBtn.textContent = options.cancelText || "取消";
   cancelBtn.hidden = mode === "alert";
-  closeBtn.hidden = mode !== "alert";
+  closeBtn.hidden = mode !== "alert" || !!options.hideCloseButton;
   inputWrap.hidden = mode !== "prompt";
   inputWrap.style.display = mode === "prompt" ? "" : "none";
   input.value = options.defaultValue || "";
   input.placeholder = options.placeholder || "";
   modal.classList.toggle("is-prompt", mode === "prompt");
   modal.classList.toggle("is-copy-dialog", !!options.isCopyDialog);
+  modal.classList.toggle("is-wechat-save-dialog", !!options.isWechatSaveDialog);
 
-  modal.classList.remove("hidden");
+  setModalVisibility(modal, true);
   document.body.classList.add("no-scroll");
 
   if (mode === "prompt") {
@@ -527,9 +554,10 @@ function openDialog(options = {}) {
 function closeDialog(result = null) {
   const modal = $("dialogModal");
   if (!modal || modal.classList.contains("hidden")) return;
-  modal.classList.add("hidden");
+  setModalVisibility(modal, false);
   modal.classList.remove("is-prompt");
   modal.classList.remove("is-copy-dialog");
+  modal.classList.remove("is-wechat-save-dialog");
   if (!hasAnyModalOpen()) {
     document.body.classList.remove("no-scroll");
   }
@@ -799,6 +827,17 @@ function syncFooterNoteVisibility() {
   note.classList.toggle("is-visible", remain <= 24);
 }
 
+function runPageScrollSync() {
+  pageScrollSyncRaf = 0;
+  syncFooterNoteVisibility();
+  syncTopbarCompactOnScroll();
+}
+
+function schedulePageScrollSync() {
+  if (pageScrollSyncRaf) return;
+  pageScrollSyncRaf = window.requestAnimationFrame(runPageScrollSync);
+}
+
 function isMobileLayout() {
   return window.matchMedia("(max-width: 819px)").matches;
 }
@@ -886,6 +925,11 @@ function syncTemplateManagerCollapseUi() {
     });
   }
   const collapsed = card.classList.contains("is-collapsed");
+  if (collapsed) {
+    document.documentElement.setAttribute("data-tm-collapsed", "1");
+  } else {
+    document.documentElement.removeAttribute("data-tm-collapsed");
+  }
   const tipText = tip.querySelector("p");
   if (tipText) {
     tipText.textContent = collapsed
@@ -1012,8 +1056,7 @@ async function togglePreviewFocus(force) {
   }
 
   syncPreviewFocusUi();
-  syncTopbarCompactOnScroll();
-  syncFooterNoteVisibility();
+  runPageScrollSync();
 
   // 进入全屏时显示退出提示，退出时隐藏
   if (shouldEnter) {
@@ -1272,10 +1315,22 @@ function hasGuestDraft() {
 
 function readGuestDraft() {
   if (!state.isGuest) return null;
-  return getGuestDraftEnvelope()?.config || null;
+  const cfg = getGuestDraftEnvelope()?.config || null;
+  if (!cfg) return null;
+  try {
+    lastGuestDraftConfigSnapshot = JSON.stringify(cfg);
+  } catch (_) {
+    lastGuestDraftConfigSnapshot = "";
+  }
+  return cfg;
 }
 
 function clearGuestDraft(silent = false) {
+  if (guestDraftSaveTimer) {
+    window.clearTimeout(guestDraftSaveTimer);
+    guestDraftSaveTimer = 0;
+  }
+  lastGuestDraftConfigSnapshot = "";
   try {
     localStorage.removeItem(GUEST_DRAFT_STORAGE_KEY);
   } catch (_) { }
@@ -1286,16 +1341,38 @@ function clearGuestDraft(silent = false) {
   }
 }
 
-function saveGuestDraft() {
+function writeGuestDraftNow(config, snapshot) {
+  const payload = {
+    version: GUEST_DRAFT_SCHEMA_VERSION,
+    updated_at: Date.now(),
+    config,
+  };
+  localStorage.setItem(GUEST_DRAFT_STORAGE_KEY, JSON.stringify(payload));
+  lastGuestDraftConfigSnapshot = snapshot;
+  syncSettingsMenuUi();
+}
+
+function saveGuestDraft(options = {}) {
   if (!state.isGuest) return;
+  const defer = !!options.defer;
   try {
-    const payload = {
-      version: GUEST_DRAFT_SCHEMA_VERSION,
-      updated_at: Date.now(),
-      config: buildConfigPayloadForSave(),
-    };
-    localStorage.setItem(GUEST_DRAFT_STORAGE_KEY, JSON.stringify(payload));
-    syncSettingsMenuUi();
+    const config = buildConfigPayloadForSave();
+    const snapshot = JSON.stringify(config);
+    if (snapshot === lastGuestDraftConfigSnapshot) return;
+    if (guestDraftSaveTimer) {
+      window.clearTimeout(guestDraftSaveTimer);
+      guestDraftSaveTimer = 0;
+    }
+    if (defer) {
+      guestDraftSaveTimer = window.setTimeout(() => {
+        guestDraftSaveTimer = 0;
+        try {
+          writeGuestDraftNow(config, snapshot);
+        } catch (_) { }
+      }, 220);
+      return;
+    }
+    writeGuestDraftNow(config, snapshot);
   } catch (_) { }
 }
 
@@ -1340,13 +1417,24 @@ function switchSettingsTab(tab) {
 function setSettingsTabsAutoHidden(hidden) {
   const tabs = document.querySelector("#settingsModal .settings-tabs");
   if (!tabs) return;
-  settingsTabsAutoHidden = !!hidden;
+  const nextHidden = !!hidden;
+  if (settingsTabsAutoHidden === nextHidden) return;
+  settingsTabsAutoHidden = nextHidden;
   tabs.classList.toggle("is-auto-hidden", settingsTabsAutoHidden);
 }
 
 function handleSettingsBodyScroll() {
   const settingsBody = document.querySelector("#settingsModal .modal-body");
   if (!settingsBody) return;
+  const mobileOnlyAutoHide = window.matchMedia("(max-width: 819px)").matches;
+
+  if (!mobileOnlyAutoHide) {
+    settingsTabsLastScrollTop = settingsBody.scrollTop;
+    settingsTabsScrollDownAcc = 0;
+    settingsTabsScrollUpAcc = 0;
+    if (settingsTabsAutoHidden) setSettingsTabsAutoHidden(false);
+    return;
+  }
 
   if (activeSettingsTab !== "media" && activeSettingsTab !== "style") {
     settingsTabsLastScrollTop = settingsBody.scrollTop;
@@ -1445,7 +1533,7 @@ function syncSettingsPaneHeight() {
 function openSettingsModal() {
   closeSettingsMenu();
   settingsConfigSnapshot = JSON.parse(JSON.stringify(formConfig()));
-  $("settingsModal").classList.remove("hidden");
+  setModalVisibility("settingsModal", true);
   document.body.classList.add("no-scroll");
   switchSettingsTab("base");
   syncSettingsPaneHeight();
@@ -1457,7 +1545,7 @@ function openSettingsModal() {
 }
 
 function closeSettingsModal() {
-  $("settingsModal").classList.add("hidden");
+  setModalVisibility("settingsModal", false);
   settingsConfigSnapshot = null;
   settingsTabsScrollDownAcc = 0;
   settingsTabsScrollUpAcc = 0;
@@ -1506,7 +1594,7 @@ function setLoginError(msg = "") {
 }
 
 function openLoginModal() {
-  $("loginModal").classList.remove("hidden");
+  setModalVisibility("loginModal", true);
   document.body.classList.add("no-scroll");
   $("loginUserIdInput").value = state.isGuest ? "" : (state.currentUser || "");
   $("loginPasswordInput").value = "";
@@ -1517,7 +1605,7 @@ function openLoginModal() {
 }
 
 function closeLoginModal() {
-  $("loginModal").classList.add("hidden");
+  setModalVisibility("loginModal", false);
   if (!hasAnyModalOpen()) {
     document.body.classList.remove("no-scroll");
   }
@@ -1641,6 +1729,19 @@ function toDownloadUrl(path) {
   return `/download/${safePath}`;
 }
 
+function toInlineViewUrl(path) {
+  const base = toDownloadUrl(path);
+  return base ? `${base}?inline=1` : "";
+}
+
+function isWechatBrowser() {
+  return /MicroMessenger/i.test(navigator.userAgent || "");
+}
+
+function isInlinePreviewableFile(name) {
+  return /\.(png|jpe?g|webp)$/i.test(String(name || ""));
+}
+
 function triggerFileDownload(downloadUrl, fileName = "") {
   if (!downloadUrl) return false;
   try {
@@ -1657,6 +1758,48 @@ function triggerFileDownload(downloadUrl, fileName = "") {
   } catch (_) {
     return false;
   }
+}
+
+async function previewGeneratedImageForWechat(filePath, fileName = "", copyText = "") {
+  const previewUrl = toInlineViewUrl(filePath);
+  if (!previewUrl) return false;
+  const safeName = String(fileName || "图片");
+  const escapedName = safeName
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;");
+  const action = await openDialog({
+    mode: "confirm",
+    title: "长按保存或转发图片",
+    confirmText: "复制文案",
+    cancelText: "关闭",
+    hideCloseButton: true,
+    isWechatSaveDialog: true,
+    messageHtml: `
+      <div class="wechat-save-guide">
+        <img src="${previewUrl}" alt="${escapedName}" class="wechat-save-guide__image" />
+      </div>
+    `,
+  });
+  if (action === true && copyText) {
+    const copied = await copyTextToClipboard(copyText);
+    showToast(copied ? "文案已复制" : "复制失败，请重试");
+  }
+  return true;
+}
+
+async function handleGeneratedFile(filePath, fileName = "", copyText = "") {
+  const downloadUrl = toDownloadUrl(filePath);
+  if (!downloadUrl) return false;
+  if (isWechatBrowser() && isInlinePreviewableFile(fileName)) {
+    return previewGeneratedImageForWechat(filePath, fileName, copyText);
+  }
+  const downloaded = triggerFileDownload(downloadUrl, fileName);
+  if (!downloaded) {
+    window.open(downloadUrl, "_blank");
+  }
+  return true;
 }
 
 function renderUploadThumb(key, path) {
@@ -1957,13 +2100,13 @@ function openPriceRowDrawer(index, focusField = "name") {
   $("priceDrawerText").value = row.text || "";
   $("priceDrawerUnit").value = row.unit || PRICE_UNIT_DEFAULT;
   syncPriceDrawerModeUi();
-  $("priceRowDrawerModal").classList.remove("hidden");
+  setModalVisibility("priceRowDrawerModal", true);
   document.body.classList.add("no-scroll");
   setTimeout(() => focusPriceDrawerInput(focusField, row.mode || "number"), 0);
 }
 
 function closePriceRowDrawer() {
-  $("priceRowDrawerModal").classList.add("hidden");
+  setModalVisibility("priceRowDrawerModal", false);
   state.editingPriceRowIndex = -1;
   if (!hasAnyModalOpen()) {
     document.body.classList.remove("no-scroll");
@@ -2294,7 +2437,7 @@ function clamp(v, min, max) {
 }
 
 function closeLogoCropModal() {
-  $("logoCropModal").classList.add("hidden");
+  setModalVisibility("logoCropModal", false);
   if (!hasAnyModalOpen()) {
     document.body.classList.remove("no-scroll");
   }
@@ -2396,7 +2539,7 @@ function openLogoCropModal(file) {
     img.onload = () => {
       state.logoCrop = { file, img, scale: 1, offsetX: 0, offsetY: 0, sx: 0, sy: 0, side: 0 };
       $("logoCropScale").value = "1";
-      $("logoCropModal").classList.remove("hidden");
+      setModalVisibility("logoCropModal", true);
       document.body.classList.add("no-scroll");
       renderLogoCropPreview();
     };
@@ -2408,6 +2551,16 @@ function openLogoCropModal(file) {
 let previewMockProgressTimer = 0;
 let previewMockProgressValue = 0;
 
+function measurePreviewRunwayTravel() {
+  const forklift = $("forkliftGroup");
+  const runway = forklift?.closest(".loading-runway");
+  if (!forklift || !runway) {
+    previewRunwayMaxTravelPx = 0;
+    return;
+  }
+  previewRunwayMaxTravelPx = Math.max(0, runway.clientWidth - forklift.offsetWidth);
+}
+
 function _updatePreviewProgress(val, overrideText = "") {
   const p = Math.floor(val);
   const textEl = document.querySelector(".preview-loading-text");
@@ -2417,8 +2570,9 @@ function _updatePreviewProgress(val, overrideText = "") {
   }
   const forklift = $("forkliftGroup");
   if (forklift) {
-    forklift.style.left = `${p}%`;
-    forklift.style.transform = `translateX(-${p}%)`;
+    if (!previewRunwayMaxTravelPx) measurePreviewRunwayTravel();
+    const travel = previewRunwayMaxTravelPx > 0 ? (previewRunwayMaxTravelPx * p) / 100 : 0;
+    forklift.style.transform = `translate3d(${travel.toFixed(2)}px, 0, 0)`;
   }
 }
 
@@ -2432,6 +2586,7 @@ function _stopPreviewMockProgress() {
 function setPreviewLoading(text = "正在生成预览...") {
   $("previewStage").classList.remove("is-loaded");
   $("previewStage").classList.add("is-loading");
+  measurePreviewRunwayTravel();
 
   _stopPreviewMockProgress();
   previewMockProgressValue = 0;
@@ -2476,19 +2631,28 @@ function startPreviewSlowHintTimer(seq) {
   }, PREVIEW_SLOW_HINT_DELAY_MS);
 }
 
-async function refreshPreview() {
-  const seq = ++state.previewSeq;
-  $("statusText").textContent = "正在生成预览...";
-  if (!$("previewImage").src) {
-    setPreviewLoading("正在生成预览...");
-  }
-  startPreviewSlowHintTimer(seq);
+async function refreshPreview(options = {}) {
+  const force = !!options.force;
   const payload = {
     title: $("titleInput").value.trim(),
     date: $("dateInput").value.trim(),
     content: $("contentInput").value,
     config: formConfig(),
   };
+  const payloadSnapshot = JSON.stringify(payload);
+  const hasCurrentPreview = !!$("previewImage").src;
+  if (!force) {
+    if (payloadSnapshot === previewInFlightPayloadSnapshot) return;
+    if (hasCurrentPreview && payloadSnapshot === lastPreviewPayloadSnapshot) return;
+  }
+
+  const seq = ++state.previewSeq;
+  previewInFlightPayloadSnapshot = payloadSnapshot;
+  $("statusText").textContent = "正在生成预览...";
+  if (!$("previewImage").src) {
+    setPreviewLoading("正在生成预览...");
+  }
+  startPreviewSlowHintTimer(seq);
   try {
     const data = await api("/api/preview", "POST", payload);
     if (seq !== state.previewSeq) return;
@@ -2500,6 +2664,8 @@ async function refreshPreview() {
       const preload = new Image();
       preload.onload = () => {
         if (seq !== state.previewSeq) return;
+        previewInFlightPayloadSnapshot = "";
+        lastPreviewPayloadSnapshot = payloadSnapshot;
         clearPreviewSlowHintTimer();
         $("previewImage").src = preload.src;
         setPreviewLoaded();
@@ -2507,6 +2673,7 @@ async function refreshPreview() {
       };
       preload.onerror = () => {
         if (seq !== state.previewSeq) return;
+        previewInFlightPayloadSnapshot = "";
         clearPreviewSlowHintTimer();
         if (retriesLeft > 0 && !/^data:/i.test(source)) {
           const nextSrc = `${source}${source.includes("?") ? "&" : "?"}_retry=${Date.now()}`;
@@ -2531,6 +2698,7 @@ async function refreshPreview() {
     loadPreviewWithRetry(primaryPreviewSrc, 1, true);
   } catch (e) {
     if (seq !== state.previewSeq) return;
+    previewInFlightPayloadSnapshot = "";
     clearPreviewSlowHintTimer();
     if (!$("previewImage").src) {
       setPreviewLoading("预览生成失败");
@@ -2552,6 +2720,8 @@ function debounce(fn, delay = 500) {
 function applyRandomBackgroundVariant() {
   const body = document.body;
   if (!body) return;
+  const existing = BG_VARIANTS.find((cls) => body.classList.contains(cls));
+  if (existing) return;
   BG_VARIANTS.forEach((cls) => body.classList.remove(cls));
   const picked = BG_VARIANTS[Math.floor(Math.random() * BG_VARIANTS.length)];
   body.classList.add(picked);
@@ -2559,6 +2729,7 @@ function applyRandomBackgroundVariant() {
 
 async function init() {
   applyRandomBackgroundVariant();
+  syncTemplateManagerCollapseUi();
   syncSettingsMenuUi();
   syncPreviewFocusUi();
   await ensureLogin();
@@ -2656,7 +2827,7 @@ async function init() {
 
   const onType = debounce(async () => {
     updateStats();
-    saveGuestDraft();
+    saveGuestDraft({ defer: true });
     await refreshPreview();
   }, 650);
 
@@ -2708,10 +2879,8 @@ async function init() {
     if (menu.contains(e.target) || btn?.contains(e.target)) return;
     closeSettingsMenu();
   });
-  $("closeSettingsBtn").addEventListener("click", closeSettingsModal);
   $("closeSettingsBtn2").addEventListener("click", () => { restoreSettingsSnapshot(); closeSettingsModal(); });
   $("settingsMask").addEventListener("click", closeSettingsModal);
-  $("closeLoginBtn").addEventListener("click", closeLoginModal);
   $("cancelLoginBtn").addEventListener("click", closeLoginModal);
   $("loginMask").addEventListener("click", closeLoginModal);
   $("closeDialogBtn").addEventListener("click", () => {
@@ -2748,7 +2917,6 @@ async function init() {
     if (!input) return;
     input.value = input.value.replace(/\r?\n/g, "");
   });
-  $("closeLogoCropBtn").addEventListener("click", closeLogoCropModal);
   $("cancelLogoCropBtn").addEventListener("click", closeLogoCropModal);
   $("logoCropMask").addEventListener("click", closeLogoCropModal);
   $("addPriceRowBtn").addEventListener("click", () => {
@@ -2935,17 +3103,16 @@ async function init() {
   document.querySelector("#settingsModal .modal-body")?.addEventListener("scroll", handleSettingsBodyScroll, { passive: true });
 
   window.addEventListener("resize", debounce(syncSettingsPaneHeight, 120));
-  window.addEventListener("resize", syncFooterNoteVisibility);
   window.addEventListener("resize", async () => {
     if (!isMobileLayout() && document.body.classList.contains("preview-focus")) {
       await togglePreviewFocus(false);
     }
-    syncTopbarCompactOnScroll();
+    schedulePageScrollSync();
     syncTemplateManagerCollapseUi();
     syncPreviewFocusUi();
+    measurePreviewRunwayTravel();
   });
-  window.addEventListener("scroll", syncFooterNoteVisibility, { passive: true });
-  window.addEventListener("scroll", syncTopbarCompactOnScroll, { passive: true });
+  window.addEventListener("scroll", schedulePageScrollSync, { passive: true });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       checkDateRolloverAndRefresh().catch(() => { });
@@ -3246,11 +3413,27 @@ async function init() {
 
   $("generateBtn").addEventListener("click", async () => {
     const btn = $("generateBtn");
+    const dateInputEl = $("dateInput");
+    const dateText = dateInputEl?.value.trim() || "";
+    if (!dateText) {
+      dateInputEl?.classList.add("is-invalid");
+      showStatusError("请先填写日期（YYYY-MM-DD）");
+      showToast("日期不能为空");
+      dateInputEl?.focus();
+      return;
+    }
+    if (!isValidYmdDate(dateText)) {
+      dateInputEl?.classList.add("is-invalid");
+      showStatusError("日期无效，请输入正确日期（YYYY-MM-DD）");
+      showToast("日期格式或日期值无效");
+      dateInputEl?.focus();
+      return;
+    }
     vibrate(10);
     setButtonBusy(btn, true, "生成中...");
     const payload = {
       title: $("titleInput").value.trim(),
-      date: $("dateInput").value.trim(),
+      date: dateText,
       content: $("contentInput").value,
       config: formConfig(),
       export_format: $("exportFormat").value,
@@ -3258,24 +3441,23 @@ async function init() {
 
     try {
       const d = await api("/api/generate", "POST", payload);
-      const downloadUrl = toDownloadUrl(d.file);
-      const downloaded = triggerFileDownload(downloadUrl, d.name || "");
-      if (!downloaded) {
-        window.open(downloadUrl, "_blank");
-      }
+      const inWechat = isWechatBrowser();
+      await handleGeneratedFile(d.file, d.name || "", d.copy_text || buildCopyTextForGeneratedPoster());
       vibrate(30);
-      showToast("已下载");
+      showToast(inWechat ? "图片已生成，请长按保存" : "已下载");
       $("statusText").textContent = "已生成";
       setButtonBusy(btn, false);
-      btn.textContent = "✓ 已下载";
+      btn.textContent = inWechat ? "✓ 已生成" : "✓ 已下载";
       btn.classList.add("is-success");
       setTimeout(() => {
         btn.textContent = btn.dataset.originText || "生成";
         btn.classList.remove("is-success");
       }, 2000);
-      const showRegTip = state.isGuest && !state.guestRegisterTipShown;
-      if (showRegTip) state.guestRegisterTipShown = true;
-      await openCopyTextDialog(buildCopyTextForGeneratedPoster(), showRegTip);
+      if (!inWechat) {
+        const showRegTip = state.isGuest && !state.guestRegisterTipShown;
+        if (showRegTip) state.guestRegisterTipShown = true;
+        await openCopyTextDialog(buildCopyTextForGeneratedPoster(), showRegTip);
+      }
     } catch (e) {
       showStatusError(e.message || "生成失败");
     } finally {
@@ -3286,8 +3468,7 @@ async function init() {
   syncEditorModeByTemplate();
   await refreshPreview();
   syncSettingsPaneHeight();
-  syncFooterNoteVisibility();
-  syncTopbarCompactOnScroll();
+  runPageScrollSync();
   syncTemplateManagerCollapseUi();
   showSettingsFirstUseTip();
 
@@ -3327,8 +3508,11 @@ async function init() {
     dateTextInput.addEventListener("blur", () => {
       const v = dateTextInput.value.trim();
       if (!v) { dateTextInput.classList.remove("is-invalid"); return; }
-      const isValid = /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(v).getTime());
+      const isValid = isValidYmdDate(v);
       dateTextInput.classList.toggle("is-invalid", !isValid);
+      if (!isValid) {
+        showStatusError("日期无效，请输入正确日期（YYYY-MM-DD）");
+      }
     });
   }
 }

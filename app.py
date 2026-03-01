@@ -55,12 +55,15 @@ OUTPUT_META_PATH = os.path.join(DATA_DIR, "output_index.json")
 USER_CONFIG_DIR = os.path.join(DATA_DIR, "user_configs")
 USERS_PATH = os.path.join(DATA_DIR, "users.json")
 CONFIG_PATH = os.path.join(DATA_DIR, "web_config.json")
+MAX_SAVED_OUTPUTS_PER_USER = max(1, int(os.environ.get("POSTER_MAX_SAVED_OUTPUTS_PER_USER", "3")))
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 PREVIEW_CACHE_TTL_SECONDS = max(30, int(os.environ.get("POSTER_PREVIEW_CACHE_TTL", "300")))
 PREVIEW_CACHE_PREFIX = os.environ.get("POSTER_PREVIEW_CACHE_PREFIX", "poster:preview")
 PREVIEW_CACHE_MAX_LOCAL_ITEMS = max(16, int(os.environ.get("POSTER_PREVIEW_CACHE_LOCAL_MAX", "128")))
 PREVIEW_ID_RE = re.compile(r"^[0-9a-f]{64}$")
+DATE_YMD_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 ADMIN_TOKEN = (os.environ.get("POSTER_ADMIN_TOKEN") or "").strip()
 ENV_NAME = str(os.environ.get("POSTER_ENV") or os.environ.get("FLASK_ENV") or "").strip().lower()
 IS_PRODUCTION = ENV_NAME in {"prod", "production"}
@@ -93,7 +96,7 @@ if not app.secret_key:
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = SESSION_COOKIE_SECURE
-app.config["PERMANENT_SESSION_LIFETIME"] = datetime.timedelta(days=14)
+app.config["PERMANENT_SESSION_LIFETIME"] = datetime.timedelta(days=30)
 LOGGER = logging.getLogger("poster_app")
 if not LOGGER.handlers:
     handler = logging.StreamHandler()
@@ -307,6 +310,26 @@ def _sanitize_runtime_cfg(raw_cfg):
     cfg["holiday_text_style"] = "festive"
     return cfg
 
+
+def _normalize_hex_color(value, fallback="#B22222"):
+    text = str(value or "").strip()
+    if HEX_COLOR_RE.match(text):
+        return text.upper()
+    return fallback
+
+
+def _mix_with_white(hex_color, ratio):
+    color = _normalize_hex_color(hex_color)
+    t = max(0.0, min(1.0, float(ratio)))
+    r = int(color[1:3], 16)
+    g = int(color[3:5], 16)
+    b = int(color[5:7], 16)
+    nr = round(r + (255 - r) * t)
+    ng = round(g + (255 - g) * t)
+    nb = round(b + (255 - b) * t)
+    return f"#{nr:02X}{ng:02X}{nb:02X}"
+
+
 def _sanitize_user_id(user_id):
     user_id = (user_id or "").strip()
     if not user_id:
@@ -326,10 +349,15 @@ def _display_user_id(user_id):
     return user_id
 
 
+def _set_session_user_id(user_id):
+    session.permanent = True
+    session["user_id"] = user_id
+
+
 def _get_user_id():
     uid = _sanitize_user_id(session.get("user_id", ""))
     if uid and uid != session.get("user_id"):
-        session["user_id"] = uid
+        _set_session_user_id(uid)
     return uid
 
 
@@ -339,7 +367,7 @@ def _ensure_user_id():
         return uid
     short = "".join(random.choices(string.ascii_lowercase + string.digits, k=5))
     uid = f"guest_{short}"
-    session["user_id"] = uid
+    _set_session_user_id(uid)
     return uid
 
 
@@ -424,6 +452,62 @@ def _record_output_owner(relpath, user_id):
         idx = _load_output_index()
         idx[rel] = {"user_id": uid, "created_at": datetime.datetime.now().isoformat(timespec="seconds")}
         _save_output_index(idx)
+
+
+def _parse_iso_timestamp(raw_value):
+    text = str(raw_value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        return datetime.datetime.fromisoformat(text).timestamp()
+    except Exception:
+        return 0.0
+
+
+def _prune_old_outputs_for_user(user_id, keep=MAX_SAVED_OUTPUTS_PER_USER):
+    uid = _sanitize_user_id(user_id)
+    keep_count = max(1, int(keep or 1))
+    if not uid:
+        return {"removed_outputs": 0, "removed_index_entries": 0}
+
+    removed_relpaths = []
+    with _OUTPUT_META_LOCK:
+        idx = _load_output_index()
+        owned = []
+        for rel, meta in idx.items():
+            owner = _sanitize_user_id((meta or {}).get("user_id", ""))
+            if owner != uid:
+                continue
+            created_at = _parse_iso_timestamp((meta or {}).get("created_at", ""))
+            owned.append((created_at, str(rel), meta))
+        if len(owned) <= keep_count:
+            return {"removed_outputs": 0, "removed_index_entries": 0}
+        owned.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        stale_relpaths = {rel for _, rel, _ in owned[keep_count:]}
+        next_idx = {rel: meta for rel, meta in idx.items() if rel not in stale_relpaths}
+        removed_relpaths = sorted(stale_relpaths)
+        _save_output_index(next_idx)
+
+    removed_outputs = 0
+    for rel in removed_relpaths:
+        abs_path = _safe_join_data_path(rel)
+        if not abs_path or not os.path.isfile(abs_path):
+            continue
+        try:
+            os.remove(abs_path)
+            removed_outputs += 1
+        except Exception:
+            _log_exception("output_prune.remove_failed", user_id=uid, path=abs_path)
+
+    user_output_dir = os.path.join(OUTPUT_DIR, uid)
+    if os.path.isdir(user_output_dir):
+        try:
+            if not any(os.scandir(user_output_dir)):
+                os.rmdir(user_output_dir)
+        except Exception:
+            _log_exception("output_prune.cleanup_dir_failed", user_id=uid, path=user_output_dir)
+
+    return {"removed_outputs": removed_outputs, "removed_index_entries": len(removed_relpaths)}
 
 
 def _load_user_config(user_id):
@@ -533,6 +617,20 @@ def _json_body():
     if not isinstance(data, dict):
         raise ValueError("JSON 格式错误")
     return data
+
+
+def _normalize_request_date_or_raise(raw_value):
+    raw = str(raw_value or "").strip()
+    if not raw:
+        raise ValueError("日期不能为空，请输入 YYYY-MM-DD")
+    if not DATE_YMD_RE.match(raw):
+        raise ValueError("日期格式错误，请输入 YYYY-MM-DD")
+    y, m, d = [int(part) for part in raw.split("-")]
+    try:
+        datetime.date(y, m, d)
+    except ValueError:
+        raise ValueError("日期无效，请输入真实存在的日期")
+    return format_date_input(raw)
 
 
 def _client_ip():
@@ -779,7 +877,22 @@ def _collect_backup_files(include_outputs):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    uid = _ensure_user_id()
+    cfg = _load_user_config(uid)
+    primary = _normalize_hex_color(cfg.get("theme_color"), "#B22222")
+    primary_rgb = f"{int(primary[1:3], 16)}, {int(primary[3:5], 16)}, {int(primary[5:7], 16)}"
+    initial_bg_variant = random.choice(["bg-variant-a", "bg-variant-b", "bg-variant-c", "bg-variant-d", "bg-variant-e"])
+    return render_template(
+        "index.html",
+        initial_theme={
+            "primary": primary,
+            "primary_rgb": primary_rgb,
+            "primary_strong": _mix_with_white(primary, 0.05),
+            "primary_soft": _mix_with_white(primary, 0.2),
+            "primary_surface": _mix_with_white(primary, 0.88),
+        },
+        initial_bg_variant=initial_bg_variant,
+    )
 
 
 @app.route("/terms")
@@ -861,7 +974,7 @@ def api_login():
     target_path = _get_user_config_path(uid)
     if merge_from_current and current_uid != uid and os.path.isfile(current_path) and (not has_user_profile):
         save_config(target_path, load_config(current_path))
-    session["user_id"] = uid
+    _set_session_user_id(uid)
     return jsonify({"ok": True, "user_id": uid, "display_user_id": _display_user_id(uid), "is_guest": _is_guest_user(uid)})
 
 
@@ -1081,7 +1194,10 @@ def api_preview():
         return jsonify({"error": str(e)}), 400
     content = data.get("content", "")
     title = data.get("title", "")
-    date_str = format_date_input(data.get("date", ""))
+    try:
+        date_str = _normalize_request_date_or_raise(data.get("date", ""))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     try:
         cfg = _sanitize_runtime_cfg({**_load_user_config(uid), **data.get("config", {})})
         cfg = _normalize_cfg_paths(cfg)
@@ -1148,7 +1264,10 @@ def api_generate():
         return jsonify({"error": str(e)}), 400
     content = data.get("content", "")
     title = data.get("title", "") or "公告"
-    date_str = format_date_input(data.get("date", ""))
+    try:
+        date_str = _normalize_request_date_or_raise(data.get("date", ""))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     cfg = _sanitize_runtime_cfg({**_load_user_config(uid), **data.get("config", {})})
     cfg = _normalize_cfg_paths(cfg)
     export_format = (data.get("export_format") or cfg.get("export_format") or "PNG").upper()
@@ -1173,6 +1292,7 @@ def api_generate():
         img.save(path, "PNG")
     relpath = _public_path(path)
     _record_output_owner(relpath, uid)
+    _prune_old_outputs_for_user(uid)
 
     copy_text = f"【{title}】\n{date_str}\n\n{content.strip()}\n\n{cfg.get('shop_name', '')}\n电话：{cfg.get('phone', '')}"
     return jsonify({"file": relpath, "name": filename, "copy_text": copy_text})
@@ -1189,7 +1309,8 @@ def api_download(relpath):
         return jsonify({"error": "无权下载该文件"}), 403
     if not os.path.isfile(abs_path):
         return jsonify({"error": "文件不存在"}), 404
-    return send_file(abs_path, as_attachment=True)
+    inline = str(request.args.get("inline", "0")).strip().lower() in {"1", "true", "yes"}
+    return send_file(abs_path, as_attachment=not inline)
 
 
 @app.get("/asset/<path:relpath>")
