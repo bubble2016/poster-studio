@@ -10,6 +10,9 @@
   --primary-soft: #0aa386;
   --primary-surface: #eaf7f4;
   --danger: #d7364f;
+  --font-sans: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+  --font-ui: "Segoe UI Semibold", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+  --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
 * {
@@ -28,7 +31,7 @@ body {
   --bg-layer-2: radial-gradient(900px 600px at 120% 10%, #f8e1cf, transparent);
   --bg-layer-3: linear-gradient(180deg, rgba(255, 255, 255, .24), rgba(245, 247, 251, .08));
   background: var(--bg-layer-1), var(--bg-layer-2), var(--bg-layer-3), var(--bg);
-  font-family: "Noto Sans SC", sans-serif;
+  font-family: var(--font-sans);
   color: var(--text);
   min-height: 100vh;
 }
@@ -164,7 +167,7 @@ body.bg-variant-e {
 
 .brand-kicker {
   margin: 0 0 2px;
-  font-family: Outfit, sans-serif;
+  font-family: var(--font-ui);
   font-size: .68rem;
   letter-spacing: .16em;
   color: #2563eb;
@@ -225,7 +228,7 @@ body.bg-variant-e {
 
 .brand-copy h1 {
   margin: 0;
-  font-family: Outfit, sans-serif;
+  font-family: var(--font-ui);
   font-size: 1.36rem;
   letter-spacing: .3px;
   line-height: 1.12;
@@ -233,7 +236,7 @@ body.bg-variant-e {
 
 h2 {
   margin: 0;
-  font-family: Outfit, sans-serif;
+  font-family: var(--font-ui);
   font-size: 1.04rem;
 }
 
@@ -872,7 +875,7 @@ input[type="checkbox"] {
   padding: 0 10px;
   background: #fff;
   color: #334155;
-  font-family: Outfit, "Noto Sans SC", sans-serif;
+  font-family: var(--font-ui);
   font-size: .86rem;
   letter-spacing: .02em;
 }
@@ -910,7 +913,7 @@ input[type="checkbox"] {
 
 .range-value {
   color: #475569;
-  font-family: Outfit, "Noto Sans SC", sans-serif;
+  font-family: var(--font-ui);
   font-size: .84rem;
   font-weight: 600;
   letter-spacing: .02em;
@@ -2590,7 +2593,7 @@ body.is-desktop-preview-focus .preview-card {
   background: rgba(255, 255, 255, .12);
   border: 1px solid rgba(255, 255, 255, .16);
   font-size: .72rem;
-  font-family: Outfit, monospace;
+  font-family: var(--font-mono);
   color: #cbd5e1;
   line-height: 1.5;
   font-style: normal;
