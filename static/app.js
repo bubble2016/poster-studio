@@ -51,6 +51,7 @@ const GUEST_DRAFT_EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
 const SETTINGS_TIP_SEEN_KEY = "poster_settings_tip_seen_v1";
 const TEMPLATE_MANAGER_TIP_SEEN_KEY = "poster_template_manager_tip_seen_v3";
 const TEMPLATE_MANAGER_COLLAPSED_KEY = "poster_template_manager_collapsed_v1";
+const CLIENT_RENDER_DISABLE_KEY = "poster_client_render_disabled_v1";
 const PRICE_LINE_PATTERN = /^\s*【([^】]+)】\s*[：:]\s*(.+?)\s*$/;
 const PRICE_UNIT_DEFAULT = "元/吨";
 const DIALOG_EMPTY = () => { };
@@ -78,6 +79,7 @@ let settingsConfigSnapshot = null;
 let lastGuestDraftConfigSnapshot = "";
 let lastPreviewPayloadSnapshot = "";
 let previewInFlightPayloadSnapshot = "";
+let activeClientPreviewObjectUrl = "";
 const SETTINGS_TABS_MIN_DELTA = 2;
 const SETTINGS_TABS_HIDE_SCROLL_PX = 56;
 const SETTINGS_TABS_SHOW_SCROLL_PX = 36;
@@ -812,6 +814,7 @@ function syncFooterNoteVisibility() {
   const note = $("actionBarNote");
   const bar = document.querySelector(".editor-col .action-bar");
   const isPreviewFocus = document.body.classList.contains("preview-focus");
+  const BOTTOM_DOCK_TRIGGER_PX = 4;
   if (!note) return;
   if (isPreviewFocus) {
     note.classList.remove("is-visible");
@@ -820,11 +823,11 @@ function syncFooterNoteVisibility() {
   }
   const doc = document.documentElement;
   const remain = Math.max(0, doc.scrollHeight - (window.scrollY + window.innerHeight));
-  const showDock = !isMobileLayout() && remain <= 160;
+  const showDock = !isMobileLayout() && remain <= BOTTOM_DOCK_TRIGGER_PX;
   if (bar) {
     bar.classList.toggle("is-dock-visible", showDock);
   }
-  note.classList.toggle("is-visible", remain <= 24);
+  note.classList.toggle("is-visible", remain <= BOTTOM_DOCK_TRIGGER_PX);
 }
 
 function runPageScrollSync() {
@@ -1564,6 +1567,7 @@ function restoreSettingsSnapshot() {
   syncThemeColorUi($("themeColor").value);
   $("cardStyle").value = normalizeCardStyle(cfg.card_style);
   $("priceColorMode").value = cfg.price_color_mode || "semantic";
+  $("batchAdjustNoteMode").value = normalizeBatchAdjustNoteMode(cfg.batch_adjust_note_mode, !!cfg.batch_adjust_show_note);
   $("shopName").value = cfg.shop_name || "";
   $("phone").value = cfg.phone || "";
   $("address").value = cfg.address || "";
@@ -1615,9 +1619,11 @@ function closeLoginModal() {
 function formConfig() {
   return {
     ...state.config,
+    last_template: $("templateSelect")?.value || state.config.last_template || "",
     theme_color: $("themeColor").value,
     card_style: $("cardStyle").value,
     price_color_mode: $("priceColorMode").value,
+    batch_adjust_note_mode: getBatchAdjustNoteMode(),
     shop_name: $("shopName").value.trim(),
     phone: $("phone").value.trim(),
     address: $("address").value.trim(),
@@ -1645,6 +1651,7 @@ function bindFromConfig(cfg) {
   syncThemeColorUi($("themeColor").value);
   $("cardStyle").value = normalizeCardStyle(cfg.card_style);
   $("priceColorMode").value = cfg.price_color_mode || "semantic";
+  $("batchAdjustNoteMode").value = normalizeBatchAdjustNoteMode(cfg.batch_adjust_note_mode, !!cfg.batch_adjust_show_note);
   $("shopName").value = cfg.shop_name || "";
   $("phone").value = cfg.phone || "";
   $("address").value = cfg.address || "";
@@ -1742,6 +1749,34 @@ function isInlinePreviewableFile(name) {
   return /\.(png|jpe?g|webp)$/i.test(String(name || ""));
 }
 
+function isClientRendererEnabled() {
+  if (!window.PosterRenderer?.renderToBlobUrl) return false;
+  try {
+    if (localStorage.getItem(CLIENT_RENDER_DISABLE_KEY) === "1") return false;
+  } catch (_) {
+  }
+  return window.PosterRenderer.isEnabled ? window.PosterRenderer.isEnabled() : true;
+}
+
+function revokeActiveClientPreviewObjectUrl() {
+  if (!activeClientPreviewObjectUrl) return;
+  try {
+    URL.revokeObjectURL(activeClientPreviewObjectUrl);
+  } catch (_) {
+  }
+  activeClientPreviewObjectUrl = "";
+}
+
+function rememberClientPreviewObjectUrl(url) {
+  if (activeClientPreviewObjectUrl && activeClientPreviewObjectUrl !== url) {
+    try {
+      URL.revokeObjectURL(activeClientPreviewObjectUrl);
+    } catch (_) {
+    }
+  }
+  activeClientPreviewObjectUrl = url || "";
+}
+
 function triggerFileDownload(downloadUrl, fileName = "") {
   if (!downloadUrl) return false;
   try {
@@ -1758,6 +1793,19 @@ function triggerFileDownload(downloadUrl, fileName = "") {
   } catch (_) {
     return false;
   }
+}
+
+function triggerBlobDownload(blob, fileName = "") {
+  if (!blob) return false;
+  const objectUrl = URL.createObjectURL(blob);
+  const ok = triggerFileDownload(objectUrl, fileName);
+  window.setTimeout(() => {
+    try {
+      URL.revokeObjectURL(objectUrl);
+    } catch (_) {
+    }
+  }, 1500);
+  return ok;
 }
 
 async function previewGeneratedImageForWechat(filePath, fileName = "", copyText = "") {
@@ -1789,6 +1837,42 @@ async function previewGeneratedImageForWechat(filePath, fileName = "", copyText 
   return true;
 }
 
+async function previewGeneratedBlobForWechat(blob, fileName = "", copyText = "") {
+  if (!blob) return false;
+  const previewUrl = URL.createObjectURL(blob);
+  const safeName = String(fileName || "图片");
+  const escapedName = safeName
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;");
+  try {
+    const action = await openDialog({
+      mode: "confirm",
+      title: "长按保存或转发图片",
+      confirmText: "复制文案",
+      cancelText: "关闭",
+      hideCloseButton: true,
+      isWechatSaveDialog: true,
+      messageHtml: `
+        <div class="wechat-save-guide">
+          <img src="${previewUrl}" alt="${escapedName}" class="wechat-save-guide__image" />
+        </div>
+      `,
+    });
+    if (action === true && copyText) {
+      const copied = await copyTextToClipboard(copyText);
+      showToast(copied ? "文案已复制" : "复制失败，请重试");
+    }
+    return true;
+  } finally {
+    try {
+      URL.revokeObjectURL(previewUrl);
+    } catch (_) {
+    }
+  }
+}
+
 async function handleGeneratedFile(filePath, fileName = "", copyText = "") {
   const downloadUrl = toDownloadUrl(filePath);
   if (!downloadUrl) return false;
@@ -1800,6 +1884,30 @@ async function handleGeneratedFile(filePath, fileName = "", copyText = "") {
     window.open(downloadUrl, "_blank");
   }
   return true;
+}
+
+async function handleGeneratedBlob(blob, fileName = "", copyText = "") {
+  if (!blob) return false;
+  if (isWechatBrowser() && isInlinePreviewableFile(fileName)) {
+    return previewGeneratedBlobForWechat(blob, fileName, copyText);
+  }
+  const downloaded = triggerBlobDownload(blob, fileName);
+  return downloaded;
+}
+
+function sanitizeGeneratedFileTitle(title) {
+  return (String(title || "").replace(/[\\/*?:"<>|]/g, "").trim() || "公告");
+}
+
+function formatGeneratedTimestamp(date = new Date()) {
+  const pad = (v) => String(v).padStart(2, "0");
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+function buildClientGeneratedFileName(title, exportFormat) {
+  const fmt = String(exportFormat || "PNG").toUpperCase();
+  const ext = fmt === "JPEG" ? ".jpg" : ".png";
+  return `${sanitizeGeneratedFileTitle(title)}_${formatGeneratedTimestamp()}${ext}`;
 }
 
 function renderUploadThumb(key, path) {
@@ -1838,9 +1946,10 @@ function syncUploadThumbsFromConfig(cfg) {
 }
 
 function applyTemplateByName(name) {
-  if (state.systemTemplates[name]) {
-    $("contentInput").value = state.systemTemplates[name][0] || "";
-    $("titleInput").value = state.systemTemplates[name][1] || $("titleInput").value;
+  const normalizedName = String(name || "").trim() === "调价说明模板" ? "文字模版" : name;
+  if (state.systemTemplates[normalizedName]) {
+    $("contentInput").value = state.systemTemplates[normalizedName][0] || "";
+    $("titleInput").value = state.systemTemplates[normalizedName][1] || $("titleInput").value;
     syncMainPriceEditorFromContent();
     return true;
   }
@@ -1853,32 +1962,103 @@ function applyTemplateByName(name) {
 }
 
 function createPriceRow() {
-  return { name: "", mode: "number", value: "", min: "", max: "", text: "", unit: PRICE_UNIT_DEFAULT };
+  return { name: "", mode: "number", value: "", min: "", max: "", text: "", unit: PRICE_UNIT_DEFAULT, adjustDirection: "", adjustAmount: "" };
+}
+
+function normalizeBatchAdjustNoteMode(value, legacyShowNote = false) {
+  const mode = String(value || "").trim().toLowerCase();
+  if (mode === "none" || mode === "text" || mode === "arrow") return mode;
+  return legacyShowNote ? "text" : "none";
+}
+
+function getBatchAdjustNoteMode() {
+  const el = $("batchAdjustNoteMode");
+  return normalizeBatchAdjustNoteMode(el?.value, !!state.config?.batch_adjust_show_note);
 }
 
 function parsePriceLineValue(rawValue) {
   const raw = String(rawValue || "").trim();
-  if (!raw) return { mode: "text", text: "", unit: PRICE_UNIT_DEFAULT };
+  if (!raw) return { mode: "text", text: "", unit: PRICE_UNIT_DEFAULT, adjustDirection: "", adjustAmount: "" };
 
   let body = raw;
   let unit = "";
-  const unitMatch = body.match(/\s*(元\s*\/\s*吨)\s*$/);
+  const unitMatch = body.match(/\s*(元\s*\/\s*吨|\/\s*吨)\s*$/);
   if (unitMatch) {
     unit = PRICE_UNIT_DEFAULT;
     body = body.slice(0, unitMatch.index).trim();
   }
 
-  const rangeMatch = body.match(/^(-?\d+(?:\.\d+)?)\s*[-~～至到]+\s*(-?\d+(?:\.\d+)?)$/);
+  const rangeMatch = body.match(/^(-?\d+(?:\.\d+)?)\s*[-~～至到]+\s*(-?\d+(?:\.\d+)?)(?:\s*[（(](上调|下调|↑|↓)\s*(\d+(?:\.\d+)?)\s*(?:元)?[)）])?$/);
   if (rangeMatch) {
-    return { mode: "range", min: rangeMatch[1], max: rangeMatch[2], unit: unit || PRICE_UNIT_DEFAULT };
+    return {
+      mode: "range",
+      min: rangeMatch[1],
+      max: rangeMatch[2],
+      unit: unit || PRICE_UNIT_DEFAULT,
+      adjustDirection: rangeMatch[3] === "下调" || rangeMatch[3] === "↓" ? "down" : (rangeMatch[3] ? "up" : ""),
+      adjustAmount: rangeMatch[4] || "",
+    };
   }
 
-  const numberMatch = body.match(/^(-?\d+(?:\.\d+)?)$/);
+  const numberMatch = body.match(/^(-?\d+(?:\.\d+)?)(?:\s*[（(](上调|下调|↑|↓)\s*(\d+(?:\.\d+)?)\s*(?:元)?[)）])?$/);
   if (numberMatch) {
-    return { mode: "number", value: numberMatch[1], unit: unit || PRICE_UNIT_DEFAULT };
+    return {
+      mode: "number",
+      value: numberMatch[1],
+      unit: unit || PRICE_UNIT_DEFAULT,
+      adjustDirection: numberMatch[2] === "下调" || numberMatch[2] === "↓" ? "down" : (numberMatch[2] ? "up" : ""),
+      adjustAmount: numberMatch[3] || "",
+    };
   }
 
-  return { mode: "text", text: body, unit };
+  return { mode: "text", text: body, unit, adjustDirection: "", adjustAmount: "" };
+}
+
+function normalizePriceAdjustMeta(direction, amount) {
+  const dir = direction === "down" || direction === "下调" ? "down" : direction === "up" || direction === "上调" ? "up" : "";
+  const normalizedAmount = String(amount || "").trim();
+  return {
+    adjustDirection: dir,
+    adjustAmount: dir && normalizedAmount ? normalizedAmount : "",
+  };
+}
+
+function clearPriceAdjustMeta(row) {
+  if (!row) return row;
+  row.adjustDirection = "";
+  row.adjustAmount = "";
+  return row;
+}
+
+function preservePriceAdjustMeta(row, direction, amount) {
+  if (!row) return row;
+  const meta = normalizePriceAdjustMeta(direction, amount);
+  row.adjustDirection = meta.adjustDirection;
+  row.adjustAmount = meta.adjustAmount;
+  return row;
+}
+
+function hasPriceRowCoreChanged(prev, next) {
+  const fields = ["mode", "value", "min", "max", "text", "unit"];
+  return fields.some((field) => String(prev?.[field] || "") !== String(next?.[field] || ""));
+}
+
+function formatAdjustedPriceText(baseValue, unit, direction, amount, noteMode = getBatchAdjustNoteMode()) {
+  const cleanValue = String(baseValue || "").trim();
+  const cleanUnit = String(unit || "").trim();
+  const meta = normalizePriceAdjustMeta(direction, amount);
+  const mode = normalizeBatchAdjustNoteMode(noteMode);
+  if (mode === "none" || !meta.adjustDirection || !meta.adjustAmount) {
+    return cleanUnit ? `${cleanValue} ${cleanUnit}`.trim() : cleanValue;
+  }
+  const note = mode === "arrow"
+    ? `（${meta.adjustDirection === "down" ? "↓" : "↑"}${meta.adjustAmount}）`
+    : `（${meta.adjustDirection === "down" ? "下调" : "上调"}${meta.adjustAmount}）`;
+  if (cleanUnit === PRICE_UNIT_DEFAULT) {
+    return `${cleanValue}${note}元/吨`;
+  }
+  if (!cleanUnit) return `${cleanValue}${note}`;
+  return `${cleanValue}${note}${cleanUnit.startsWith("/") ? "" : " "}${cleanUnit}`;
 }
 
 function parseContentToPriceEditor(content) {
@@ -1903,6 +2083,8 @@ function parseContentToPriceEditor(content) {
       max: parsed.max || "",
       text: parsed.text || "",
       unit: parsed.unit || PRICE_UNIT_DEFAULT,
+      adjustDirection: parsed.adjustDirection || "",
+      adjustAmount: parsed.adjustAmount || "",
     });
   });
 
@@ -1928,6 +2110,9 @@ function syncDesktopPriceInputsToState() {
     row.max = tr.querySelector('[data-field="max"]')?.value?.trim() || "";
     row.text = tr.querySelector('[data-field="text"]')?.value?.trim() || "";
     row.unit = tr.querySelector('[data-field="unit"]')?.value?.trim() || "";
+    if (row.mode === "text") {
+      clearPriceAdjustMeta(row);
+    }
   });
 }
 
@@ -1952,12 +2137,14 @@ function buildContentFromPriceEditor(rows, extra) {
     const mode = String(row.mode || "number");
     const unit = String(row.unit || "").trim();
     const suffix = unit ? ` ${unit}` : "";
+    const adjustDirection = row.adjustDirection || "";
+    const adjustAmount = row.adjustAmount || "";
 
     if (mode === "range") {
       const v1 = String(row.min || "").trim();
       const v2 = String(row.max || "").trim();
       if (!v1 || !v2) return;
-      out.push(`【${name}】：${v1}-${v2}${suffix}`);
+      out.push(`【${name}】：${formatAdjustedPriceText(`${v1}-${v2}`, unit, adjustDirection, adjustAmount)}`);
       return;
     }
 
@@ -1970,7 +2157,7 @@ function buildContentFromPriceEditor(rows, extra) {
 
     const value = String(row.value || "").trim();
     if (!value) return;
-    out.push(`【${name}】：${value}${suffix}`);
+    out.push(`【${name}】：${formatAdjustedPriceText(value, unit, adjustDirection, adjustAmount)}`);
   });
 
   const note = String(extra || "").replace(/\r\n/g, "\n").trim();
@@ -2030,19 +2217,20 @@ function syncPriceEditorFieldWidths() {
 function getPriceRowDisplayText(row) {
   const mode = String(row?.mode || "number");
   const unit = String(row?.unit || "").trim();
-  const suffix = unit ? ` ${unit}` : "";
+  const adjustDirection = row?.adjustDirection || "";
+  const adjustAmount = row?.adjustAmount || "";
   if (mode === "range") {
     const min = String(row?.min || "").trim();
     const max = String(row?.max || "").trim();
     if (!min && !max) return "-";
-    return `${min || "?"}-${max || "?"}${suffix}`;
+    return formatAdjustedPriceText(`${min || "?"}-${max || "?"}`, unit, adjustDirection, adjustAmount);
   }
   if (mode === "text") {
     const text = String(row?.text || "").trim();
-    return text ? `${text}${suffix}` : "-";
+    return text ? `${text}${unit ? ` ${unit}` : ""}` : "-";
   }
   const value = String(row?.value || "").trim();
-  return value ? `${value}${suffix}` : "-";
+  return value ? formatAdjustedPriceText(value, unit, adjustDirection, adjustAmount) : "-";
 }
 
 function syncPriceDrawerModeUi() {
@@ -2116,6 +2304,7 @@ function closePriceRowDrawer() {
 function savePriceRowFromDrawer() {
   const idx = state.editingPriceRowIndex;
   if (!Number.isInteger(idx) || idx < 0 || idx >= state.priceEditorRows.length) return false;
+  const prev = state.priceEditorRows[idx] || createPriceRow();
   const mode = $("priceDrawerMode").value || "number";
   const next = {
     name: $("priceDrawerName").value.trim(),
@@ -2125,6 +2314,8 @@ function savePriceRowFromDrawer() {
     max: "",
     text: "",
     unit: $("priceDrawerUnit").value.trim() || PRICE_UNIT_DEFAULT,
+    adjustDirection: "",
+    adjustAmount: "",
   };
   if (mode === "range") {
     next.min = $("priceDrawerMin").value.trim();
@@ -2133,6 +2324,9 @@ function savePriceRowFromDrawer() {
     next.text = $("priceDrawerText").value.trim();
   } else {
     next.value = $("priceDrawerValue").value.trim();
+  }
+  if (!hasPriceRowCoreChanged(prev, next)) {
+    preservePriceAdjustMeta(next, prev.adjustDirection, prev.adjustAmount);
   }
   state.priceEditorRows[idx] = next;
   return true;
@@ -2286,12 +2480,19 @@ function syncHiddenContentFromMainPriceEditor() {
   updateStats();
 }
 
-function isHolidayTemplateName(name) {
-  const key = String(name || "");
+function getTemplateMeta(name) {
+  const key = String(name || "").trim() === "调价说明模板" ? "文字模版" : String(name || "");
   const metaMap = state.systemTemplateMeta;
-  if (!metaMap || typeof metaMap !== "object") return false;
+  if (!metaMap || typeof metaMap !== "object") return {};
   const meta = metaMap[key];
-  if (!meta || typeof meta !== "object") return false;
+  return meta && typeof meta === "object" ? meta : {};
+}
+
+function isTextNoticeTemplateName(name) {
+  const meta = getTemplateMeta(name);
+  if (String(meta.editor_mode || "").trim().toLowerCase() === "text_notice") {
+    return true;
+  }
   return meta.is_holiday === true;
 }
 
@@ -2308,7 +2509,7 @@ function syncEditorModeByTemplate() {
   const tplSel = $("templateSelect");
   if (!contentInput || !priceEditorPanel || !tplSel) return;
 
-  const holidayMode = isHolidayTemplateName(tplSel.value);
+  const holidayMode = isTextNoticeTemplateName(tplSel.value);
   if (!holidayMode) {
     syncMainPriceEditorFromContent();
   }
@@ -2326,14 +2527,18 @@ function getHolidayPresetPath() {
 }
 
 function shouldUseHolidayPreset(templateName) {
-  return isHolidayTemplateName(templateName);
+  const meta = getTemplateMeta(templateName);
+  return String(meta.auto_bg_preset || "").trim().toLowerCase() === "holiday_red";
 }
 
 function resolveInitialTemplateName(tplSel) {
   const options = [...(tplSel?.options || [])].map((opt) => opt.value);
   if (!options.length) return "";
 
-  const savedTemplate = String(state.config.last_template || "").trim();
+  let savedTemplate = String(state.config.last_template || "").trim();
+  if (savedTemplate === "调价说明模板") {
+    savedTemplate = "文字模版";
+  }
   if (savedTemplate && options.includes(savedTemplate)) {
     return savedTemplate;
   }
@@ -2654,6 +2859,41 @@ async function refreshPreview(options = {}) {
   }
   startPreviewSlowHintTimer(seq);
   try {
+    if (isClientRendererEnabled()) {
+      try {
+        const rendered = await window.PosterRenderer.renderToBlobUrl(payload, { exportFormat: "PNG" });
+        if (seq !== state.previewSeq) {
+          if (rendered.objectUrl) URL.revokeObjectURL(rendered.objectUrl);
+          return;
+        }
+        const clientLoaded = await new Promise((resolve) => {
+          const preload = new Image();
+          preload.onload = () => {
+            if (seq !== state.previewSeq) {
+              if (rendered.objectUrl) URL.revokeObjectURL(rendered.objectUrl);
+              resolve(true);
+              return;
+            }
+            previewInFlightPayloadSnapshot = "";
+            lastPreviewPayloadSnapshot = payloadSnapshot;
+            clearPreviewSlowHintTimer();
+            rememberClientPreviewObjectUrl(rendered.objectUrl);
+            $("previewImage").src = preload.src;
+            setPreviewLoaded();
+            const warnings = rendered.warnings || [];
+            $("statusText").textContent = !rendered.valid && warnings.length ? warnings[0] : "预览已更新";
+            resolve(true);
+          };
+          preload.onerror = () => resolve(false);
+          preload.src = rendered.objectUrl;
+        });
+        if (clientLoaded) return;
+        if (rendered.objectUrl) URL.revokeObjectURL(rendered.objectUrl);
+        throw new Error("浏览器预览加载失败");
+      } catch (clientError) {
+        console.warn("client_preview_failed", clientError);
+      }
+    }
     const data = await api("/api/preview", "POST", payload);
     if (seq !== state.previewSeq) return;
     const reqId = data.request_id ? String(data.request_id) : "";
@@ -2667,6 +2907,7 @@ async function refreshPreview(options = {}) {
         previewInFlightPayloadSnapshot = "";
         lastPreviewPayloadSnapshot = payloadSnapshot;
         clearPreviewSlowHintTimer();
+        revokeActiveClientPreviewObjectUrl();
         $("previewImage").src = preload.src;
         setPreviewLoaded();
         $("statusText").textContent = !data.valid && data.warnings.length ? data.warnings[0] : "预览已更新";
@@ -2835,7 +3076,7 @@ async function init() {
     "titleInput", "dateInput", "contentInput",
     "shopName", "phone", "address", "slogan",
     "themeColor", "cardStyle", "bgBlur", "bgBrightness",
-    "priceColorMode", "cardOpacity", "stampOpacity", "watermarkEnabled",
+    "priceColorMode", "batchAdjustNoteMode", "cardOpacity", "stampOpacity", "watermarkEnabled",
     "watermarkText", "watermarkOpacity", "watermarkDensity", "exportFormat",
   ];
 
@@ -3221,7 +3462,13 @@ async function init() {
     try {
       const beforeContent = $("contentInput").value;
       const beforeLines = (beforeContent || "").split("\n").filter((x) => x.trim()).length;
-      const d = await api("/api/format", "POST", { content: beforeContent });
+      let d;
+      try {
+        if (!window.PosterTextTools?.autoFormatContent) throw new Error("本地格式化不可用");
+        d = { content: window.PosterTextTools.autoFormatContent(beforeContent) };
+      } catch (_) {
+        d = await api("/api/format", "POST", { content: beforeContent });
+      }
       $("contentInput").value = d.content;
       syncMainPriceEditorFromContent();
       updateStats();
@@ -3252,7 +3499,23 @@ async function init() {
     const sign = m[1] === "-" ? -1 : 1;
     const amount = sign * Number(m[2]);
     try {
-      const d = await api("/api/batch-adjust", "POST", { content: $("contentInput").value, amount });
+      let d;
+      try {
+        if (!window.PosterTextTools?.batchAdjustContent) throw new Error("本地批量调价不可用");
+        d = {
+          content: window.PosterTextTools.batchAdjustContent(
+            $("contentInput").value,
+            amount,
+            getBatchAdjustNoteMode(),
+          ),
+        };
+      } catch (_) {
+        d = await api("/api/batch-adjust", "POST", {
+          content: $("contentInput").value,
+          amount,
+          note_mode: getBatchAdjustNoteMode(),
+        });
+      }
       $("contentInput").value = d.content;
       syncMainPriceEditorFromContent();
       updateStats();
@@ -3440,6 +3703,33 @@ async function init() {
     };
 
     try {
+      const exportFormat = String(payload.export_format || "PNG").toUpperCase();
+      if ((exportFormat === "PNG" || exportFormat === "JPEG") && isClientRendererEnabled()) {
+        try {
+          const rendered = await window.PosterRenderer.renderToBlob(payload, { exportFormat });
+          const fileName = buildClientGeneratedFileName(payload.title || "公告", exportFormat);
+          const inWechat = isWechatBrowser();
+          await handleGeneratedBlob(rendered.blob, fileName, buildCopyTextForGeneratedPoster());
+          vibrate(30);
+          showToast(inWechat ? "图片已生成，请长按保存" : "已下载");
+          $("statusText").textContent = "已生成";
+          setButtonBusy(btn, false);
+          btn.textContent = inWechat ? "✓ 已生成" : "✓ 已下载";
+          btn.classList.add("is-success");
+          setTimeout(() => {
+            btn.textContent = btn.dataset.originText || "生成";
+            btn.classList.remove("is-success");
+          }, 2000);
+          if (!inWechat) {
+            const showRegTip = state.isGuest && !state.guestRegisterTipShown;
+            if (showRegTip) state.guestRegisterTipShown = true;
+            await openCopyTextDialog(buildCopyTextForGeneratedPoster(), showRegTip);
+          }
+          return;
+        } catch (clientError) {
+          console.warn("client_generate_failed", clientError);
+        }
+      }
       const d = await api("/api/generate", "POST", payload);
       const inWechat = isWechatBrowser();
       await handleGeneratedFile(d.file, d.name || "", d.copy_text || buildCopyTextForGeneratedPoster());

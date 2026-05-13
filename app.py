@@ -307,6 +307,11 @@ def _sanitize_runtime_cfg(raw_cfg):
     cfg["watermark_density"] = _coerce_float(cfg.get("watermark_density"), DEFAULT_CONFIG["watermark_density"], 0.5, 2.0)
     cfg["jpeg_quality"] = _coerce_int(cfg.get("jpeg_quality"), DEFAULT_CONFIG["jpeg_quality"], 1, 100)
     cfg["watermark_enabled"] = _coerce_bool(cfg.get("watermark_enabled"), DEFAULT_CONFIG["watermark_enabled"])
+    batch_adjust_note_mode = str(cfg.get("batch_adjust_note_mode") or "").strip().lower()
+    if batch_adjust_note_mode not in {"none", "text", "arrow"}:
+        legacy_show_note = _coerce_bool(cfg.get("batch_adjust_show_note"), False)
+        batch_adjust_note_mode = "text" if legacy_show_note else DEFAULT_CONFIG["batch_adjust_note_mode"]
+    cfg["batch_adjust_note_mode"] = batch_adjust_note_mode
     cfg["holiday_text_style"] = "festive"
     return cfg
 
@@ -918,6 +923,30 @@ def favicon():
     return send_file(icon_path, mimetype="image/x-icon")
 
 
+@app.get("/font/<path:filename>")
+def app_font(filename):
+    safe_name = os.path.basename(str(filename or "").replace("\\", "/"))
+    allowed = {
+        "SourceHanSansSC-Regular.otf",
+        "SourceHanSansSC-Bold.otf",
+        "Bahnschrift.ttf",
+        "NotoSansSC-VF.ttf",
+        "MicrosoftYaHei.ttc",
+    }
+    if safe_name not in allowed:
+        return jsonify({"error": "不允许访问该字体"}), 403
+    ext = os.path.splitext(safe_name)[1].lower()
+    if ext not in {".ttf", ".ttc", ".otf"}:
+        return jsonify({"error": "仅支持字体资源"}), 400
+    path = os.path.abspath(os.path.join(BASE_DIR, "fonts", safe_name))
+    fonts_root = os.path.abspath(os.path.join(BASE_DIR, "fonts"))
+    if not (path == fonts_root or path.startswith(fonts_root + os.sep)):
+        return jsonify({"error": "非法路径"}), 403
+    if not os.path.isfile(path):
+        return jsonify({"error": "字体不存在"}), 404
+    return send_file(path)
+
+
 @app.errorhandler(413)
 def too_large(_):
     mb = MAX_UPLOAD_BYTES // (1024 * 1024)
@@ -1373,7 +1402,11 @@ def api_batch_adjust():
         amount = int(data.get("amount", 0))
     except (TypeError, ValueError):
         return jsonify({"error": "调整金额必须是数字"}), 400
-    return jsonify({"content": batch_adjust_content(data.get("content", ""), amount)})
+    note_mode = str(data.get("note_mode") or "").strip().lower()
+    if note_mode not in {"none", "text", "arrow"}:
+        annotate = _coerce_request_bool(data.get("annotate_adjustment"), False)
+        note_mode = "text" if annotate else "none"
+    return jsonify({"content": batch_adjust_content(data.get("content", ""), amount, note_mode=note_mode)})
 
 
 if __name__ == "__main__":
