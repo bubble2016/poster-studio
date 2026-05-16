@@ -69,6 +69,29 @@ FONT_CN_LABEL = _existing_path(
         FONT_CN_REG,
     ]
 )
+FONT_LXGW_WENKAI_REG = _existing_path(
+    [
+        os.path.join(BASE_DIR, "fonts", "LXGWWenKai-Regular.ttf"),
+        FONT_CN_REG,
+    ]
+)
+FONT_LXGW_WENKAI_MED = _existing_path(
+    [
+        os.path.join(BASE_DIR, "fonts", "LXGWWenKai-Medium.ttf"),
+        FONT_LXGW_WENKAI_REG,
+        FONT_CN_BOLD,
+        FONT_CN_REG,
+    ]
+)
+FONT_PRESETS = {
+    "source_han_sans": {"regular": FONT_CN_REG, "bold": FONT_CN_BOLD, "label": FONT_CN_REG, "medium": FONT_CN_BOLD},
+    "lxgw_wenkai": {
+        "regular": FONT_LXGW_WENKAI_REG,
+        "bold": FONT_LXGW_WENKAI_MED,
+        "label": FONT_LXGW_WENKAI_REG,
+        "medium": FONT_LXGW_WENKAI_MED,
+    },
+}
 FONT_NUM_AMETHYST = _existing_path(
     [
         os.path.join(BASE_DIR, "fonts", "Bahnschrift.ttf"),
@@ -120,11 +143,28 @@ SYSTEM_TEMPLATES = {
         "各位客户、司机朋友：\n元宵佳节将至，本站安排如下：\n放假时间： 2026年3月3日（农历正月十五），全天放假。\n\n营业时间： 3月4日（农历正月十六） 起恢复正常收货、装卸及结算业务。\n\n请各位合作伙伴提前做好送货安排。\n\n祝元宵节快乐，阖家团圆，财源滚滚！",
         "放假通知",
     ),
+    "文字模版": (
+        "各位客户、司机朋友：\n因市场行情变化，本站自即日起对部分品类收购价格进行调整，具体执行标准如下：\n1. 现场过磅、验货后按最新标准结算；\n2. 当日最终执行价格以现场公布为准；\n3. 如需提前确认，请致电联系工作人员。\n\n请各位合作伙伴提前做好送货安排，感谢长期以来的理解与支持。",
+        "调价说明",
+    ),
 }
 SYSTEM_TEMPLATE_META = {
-    "报价模板": {"is_holiday": False},
-    "调价模板": {"is_holiday": False},
-    "放假模板": {"is_holiday": True},
+    "报价模板": {"is_holiday": False, "editor_mode": "price", "render_mode": "default"},
+    "调价模板": {"is_holiday": False, "editor_mode": "price", "render_mode": "default"},
+    "放假模板": {
+        "is_holiday": True,
+        "editor_mode": "text_notice",
+        "render_mode": "text_notice",
+        "text_notice_style": "festive",
+        "auto_bg_preset": "holiday_red",
+    },
+    "文字模版": {
+        "is_holiday": False,
+        "editor_mode": "text_notice",
+        "render_mode": "text_notice",
+        "text_notice_style": "festive",
+        "auto_bg_preset": "holiday_red",
+    },
 }
 DEFAULT_CONFIG = {
     "shop_name": "环太平洋废纸回收打包站",
@@ -148,6 +188,8 @@ DEFAULT_CONFIG = {
     "theme_color": "#B22222",
     "price_color_mode": "semantic",
     "price_style": "amethyst",
+    "font_preset": "source_han_sans",
+    "batch_adjust_note_mode": "none",
     "last_content": "",
     "last_date": "",
     "last_title": "调价通知",
@@ -162,11 +204,58 @@ DEFAULT_CONFIG = {
     "holiday_text_style": "festive",
 }
 
+ADJUST_NOTE_RE = re.compile(r"\s*[（(](上调|下调|↑|↓)\s*(\d{1,5})\s*(?:元)?[)）]\s*")
+PRICE_BODY_RE = re.compile(
+    r"^\s*(?P<value>-?\d+(?:\.\d+)?(?:\s*[-~～至到]\s*-?\d+(?:\.\d+)?)?)\s*(?P<unit>元\s*/\s*吨|/\s*吨|[^\d\s（）()]+(?:\s*/\s*[^\d\s（）()]+)*)?\s*$"
+)
+PRICE_LINE_BODY_RE = re.compile(r"^(\s*(?:【[^】]{1,30}】|[^：:\s][^：:\n]{0,30})\s*[：:]\s*)(.*?)(\s*)$")
+
 PRICE_STYLES = {
     "amethyst": {"font": FONT_NUM_AMETHYST, "color": "#5B3FA8", "unit_color": "#6D57B5"},
     "plum": {"font": FONT_NUM_PLUM, "color": "#6A2C91", "unit_color": "#7A48A2"},
     "indigo": {"font": FONT_NUM_INDIGO, "color": "#3F4DB8", "unit_color": "#5F6AD1"},
 }
+
+
+def normalize_font_preset(value):
+    text = str(value or "").strip().lower()
+    if text in {"", "default"}:
+        return DEFAULT_CONFIG["font_preset"]
+    return text if text in FONT_PRESETS else DEFAULT_CONFIG["font_preset"]
+
+
+def resolve_font_preset(value):
+    preset = FONT_PRESETS[normalize_font_preset(value)]
+    return {
+        "regular": preset.get("regular") or FONT_CN_REG,
+        "bold": preset.get("bold") or FONT_CN_BOLD or FONT_CN_REG,
+        "label": preset.get("label") or preset.get("regular") or FONT_CN_LABEL or FONT_CN_REG,
+        "medium": preset.get("medium") or preset.get("bold") or FONT_CN_MED or FONT_CN_REG,
+    }
+
+
+def _resolve_system_template_meta(name):
+    key = str(name or "").strip()
+    if key == "调价说明模板":
+        key = "文字模版"
+    meta = SYSTEM_TEMPLATE_META.get(key)
+    return meta if isinstance(meta, dict) else {}
+
+
+def _uses_text_notice_layout(title, cfg):
+    meta = _resolve_system_template_meta((cfg or {}).get("last_template"))
+    if str(meta.get("editor_mode") or "").strip().lower() == "text_notice":
+        return True
+    return "放假" in str(title or "")
+
+
+def _resolve_text_notice_style(title, cfg):
+    meta = _resolve_system_template_meta((cfg or {}).get("last_template"))
+    style = meta.get("text_notice_style")
+    if not style and _uses_text_notice_layout(title, cfg):
+        style = cfg.get("holiday_text_style", "festive")
+    style = str(style or "festive").strip().lower()
+    return style if style in {"official", "festive"} else "festive"
 
 
 def _normalize_hex_color(value, fallback="#B22222"):
@@ -687,8 +776,92 @@ def validate_content(content):
     return len(warnings) == 0, warnings
 
 
-def batch_adjust_content(content, amount):
+def _strip_adjust_note(text):
+    return ADJUST_NOTE_RE.sub("", str(text or ""))
+
+
+def _normalize_batch_adjust_note_mode(mode, legacy_show_note=False):
+    text = str(mode or "").strip().lower()
+    if text in {"none", "text", "arrow"}:
+        return text
+    return "text" if legacy_show_note else DEFAULT_CONFIG["batch_adjust_note_mode"]
+
+
+def _extract_adjust_note_meta(text):
+    match = ADJUST_NOTE_RE.search(str(text or ""))
+    if not match:
+        return "", ""
+    token = match.group(1)
+    direction = "down" if token in {"下调", "↓"} else "up"
+    return direction, match.group(2)
+
+
+def _normalize_unit_text(unit):
+    return re.sub(r"\s+", "", str(unit or ""))
+
+
+def _format_adjusted_number(raw_value, amount):
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        return ""
+    adjusted = max(0.0, value + amount)
+    if adjusted.is_integer():
+        return str(int(adjusted))
+    return f"{adjusted:.2f}".rstrip("0").rstrip(".")
+
+
+def _adjust_price_value_text(value_text, amount):
+    value = str(value_text or "").strip()
+    range_match = re.fullmatch(r"(-?\d+(?:\.\d+)?)\s*[-~～至到]\s*(-?\d+(?:\.\d+)?)", value)
+    if range_match:
+        left = _format_adjusted_number(range_match.group(1), amount)
+        right = _format_adjusted_number(range_match.group(2), amount)
+        if left and right:
+            return f"{left}-{right}"
+        return ""
+    number_match = re.fullmatch(r"(-?\d+(?:\.\d+)?)", value)
+    if number_match:
+        return _format_adjusted_number(number_match.group(1), amount)
+    return ""
+
+
+def _split_adjustable_price_body(body):
+    cleaned = _strip_adjust_note(body).strip()
+    match = PRICE_BODY_RE.match(cleaned)
+    if not match:
+        return None
+    return match.group("value").strip(), _normalize_unit_text(match.group("unit"))
+
+
+def _format_price_body(value_text, unit_text, amount=0, note_mode="none"):
+    value = re.sub(r"\s+", "", str(value_text or ""))
+    unit = _normalize_unit_text(unit_text)
+    if unit == "/吨":
+        unit = "元/吨"
+    mode = _normalize_batch_adjust_note_mode(note_mode)
+    if mode != "none" and amount:
+        if mode == "arrow":
+            note = f"（{'↑' if amount >= 0 else '↓'}{abs(int(amount))}）"
+        else:
+            direction = "上调" if amount >= 0 else "下调"
+            note = f"（{direction}{abs(int(amount))}）"
+        if unit == "元/吨":
+            return f"{value}{note}元/吨"
+        if unit:
+            sep = "" if unit.startswith("/") else " "
+            return f"{value}{note}{sep}{unit}"
+        return f"{value}{note}"
+    if unit:
+        return f"{value} {unit}"
+    return value
+
+
+def batch_adjust_content(content, amount, note_mode="none", annotate=None):
     txt = content or ""
+    if annotate is not None:
+        note_mode = "text" if annotate else "none"
+    note_mode = _normalize_batch_adjust_note_mode(note_mode)
 
     def repl_range(m):
         p1, p2 = int(m.group(1)), int(m.group(2))
@@ -715,15 +888,38 @@ def batch_adjust_content(content, amount):
         raw = line or ""
         if not raw.strip():
             return raw
+        raw_no_note = _strip_adjust_note(raw)
 
         is_price_line = bool(
-            re.search(r"(元|吨|上调|下调)", raw)
-            or re.search(r"【[^】]{1,30}】\s*[：:]\s*(?:上调|下调|\d{3,5})", raw)
+            re.search(r"(元|吨|上调|下调)", raw_no_note)
+            or re.search(r"【[^】]{1,30}】\s*[：:]\s*(?:上调|下调|\d{3,5})", raw_no_note)
         )
         if not is_price_line:
             return raw
 
-        out, range_holders = protect_ranges(raw)
+        line_match = PRICE_LINE_BODY_RE.match(raw)
+        if line_match:
+            prefix, body, suffix = line_match.groups()
+            parsed = _split_adjustable_price_body(body)
+            if parsed:
+                value_text, unit_text = parsed
+                adjusted_value = _adjust_price_value_text(value_text, amount)
+                if adjusted_value:
+                    return f"{prefix}{_format_price_body(adjusted_value, unit_text, amount, note_mode=note_mode)}{suffix}"
+            adj_m = re.match(r"(上调|下调)\s*(\d{1,5})", body.strip())
+            if adj_m:
+                after_adj = body.strip()[adj_m.end():].strip()
+                if not after_adj or re.fullmatch(r"元\s*/\s*吨|/\s*吨", after_adj):
+                    return raw
+
+        no_note = raw_no_note.strip()
+        adj_only = re.match(r"(上调|下调)\s*(\d{1,5})(?!\s*[-~～至到])", no_note)
+        if adj_only:
+            after = no_note[adj_only.end():].strip()
+            if not after or re.fullmatch(r"元\s*/\s*吨|/\s*吨", after):
+                return raw
+
+        out, range_holders = protect_ranges(raw_no_note)
         out = re.sub(
             r"(上调|下调)\s*(\d{1,5})",
             lambda _: f"{'上调' if amount >= 0 else '下调'}{abs(amount)}",
@@ -936,19 +1132,18 @@ def draw_poster(content, date_str, title, cfg):
     base = ImageEnhance.Brightness(base).enhance(float(cfg.get("bg_brightness", 1.0)))
     img = base.convert("RGBA")
 
-    get_font = lambda size, bold=False: FontManager.get(FONT_CN_BOLD if bold else FONT_CN_REG, size)
-    get_med_font = lambda size: FontManager.get(FONT_CN_MED, size)
-    get_label_font = lambda size: FontManager.get(FONT_CN_LABEL, size)
+    font_preset = resolve_font_preset(cfg.get("font_preset"))
+    get_font = lambda size, bold=False: FontManager.get(font_preset["bold"] if bold else font_preset["regular"], size)
+    get_med_font = lambda size: FontManager.get(font_preset["medium"], size)
+    get_label_font = lambda size: FontManager.get(font_preset["label"], size)
     price_style = PRICE_STYLES.get(cfg.get("price_style", "amethyst"), PRICE_STYLES["amethyst"])
     get_num_font = lambda size: FontManager.get(price_style.get("font") or FONT_NUM, size)
     cw = 920
     cx = (w - cw) // 2
     
     lines = (content or "").split("\n")
-    is_holiday_mode = "放假" in (title or "")
-    holiday_text_style = "festive" if is_holiday_mode else str(cfg.get("holiday_text_style", "festive") or "festive").strip().lower()
-    if holiday_text_style not in {"official", "festive"}:
-        holiday_text_style = "festive"
+    is_holiday_mode = _uses_text_notice_layout(title, cfg)
+    holiday_text_style = _resolve_text_notice_style(title, cfg)
     layout_items, sim_y = _calculate_layout_lines(lines, cw, is_holiday_mode, get_font, holiday_text_style)
 
 
@@ -1350,25 +1545,14 @@ def draw_poster(content, date_str, title, cfg):
         value = (text or "").strip()
         if not value:
             return
-        has_cn = any("\u4e00" <= c <= "\u9fff" for c in value)
-        m = re.search(r"\d+(?:\.\d+)?", value)
-        if has_cn and m:
-            cn_font = get_label_font(45)
-            num_font = get_num_font(65)
-            left_txt = value[:m.start()]
-            num_txt = value[m.start():m.end()]
-            right_txt = value[m.end():]
-            x = right_x
-            if right_txt:
-                draw.text((x, base_y), right_txt, font=cn_font, fill=color, anchor="rs")
-                x -= draw.textlength(right_txt, font=cn_font)
-            draw.text((x, base_y), num_txt, font=num_font, fill=color, anchor="rs")
-            x -= draw.textlength(num_txt, font=num_font)
-            if left_txt:
-                draw.text((x, base_y), left_txt, font=cn_font, fill=color, anchor="rs")
+        segments = re.findall(r"\d+(?:\.\d+)?|[^\d]+", value)
+        if not segments:
             return
-        font = get_label_font(45) if has_cn else get_num_font(65)
-        draw.text((right_x, base_y), value, font=font, fill=color, anchor="rs")
+        x = right_x
+        for seg in reversed(segments):
+            font = get_num_font(65) if re.fullmatch(r"\d+(?:\.\d+)?", seg) else get_label_font(45)
+            draw.text((x, base_y), seg, font=font, fill=color, anchor="rs")
+            x -= draw.textlength(seg, font=font)
     
     for item in layout_items:
         if item["type"] == "space":
@@ -1404,19 +1588,36 @@ def draw_poster(content, date_str, title, cfg):
             else:
                 c_val = theme_hex
              
+            note_mode = _normalize_batch_adjust_note_mode(
+                cfg.get("batch_adjust_note_mode"),
+                cfg.get("batch_adjust_show_note"),
+            )
+            adjust_direction, adjust_amount = _extract_adjust_note_meta(v)
+            display_value = v
+            parsed_value = _split_adjustable_price_body(v)
+            if note_mode == "none":
+                display_value = _strip_adjust_note(v).strip()
+            elif adjust_direction and adjust_amount and parsed_value:
+                signed_amount = int(adjust_amount) * (-1 if adjust_direction == "down" else 1)
+                display_value = _format_price_body(parsed_value[0], parsed_value[1], signed_amount, note_mode=note_mode)
+            unit_match = re.search(
+                r"\s*(元\s*/\s*吨|/\s*吨|[^\d\s（）()]+(?:\s*/\s*[^\d\s（）()]+)*)\s*$",
+                display_value,
+            )
             base_y, rx = cur + 53, cx + cw - 60
-            if "元" in v:
-                val_pt, unit_pt = v.split("元", 1)
+            if unit_match:
+                unit_text = unit_match.group(1).strip()
+                value_text = display_value[: unit_match.start()].strip()
                 fu = get_font(30)
                 if is_dark_style:
-                    unit_color = "#AAB6C5" if c_val not in {"#D32F2F", "#2E7D32"} else c_val
+                    unit_color = c_val if c_val in {"#D32F2F", "#2E7D32"} else "#AAB6C5"
                 else:
                     unit_color = c_val if c_val in {"#D32F2F", "#2E7D32"} else theme_unit
-                draw.text((rx, base_y), "元" + unit_pt.strip(), font=fu, fill=unit_color, anchor="rs")
-                uw = draw.textlength("元" + unit_pt.strip(), font=fu)
-                _draw_price_value_right(val_pt, rx - uw - 8, base_y, c_val)
+                draw.text((rx, base_y), unit_text, font=fu, fill=unit_color, anchor="rs")
+                uw = draw.textlength(unit_text, font=fu)
+                _draw_price_value_right(value_text, rx - uw - 8, base_y, c_val)
             else:
-                _draw_price_value_right(v, rx, base_y, c_val)
+                _draw_price_value_right(display_value, rx, base_y, c_val)
             cur += 85
             
         elif item["type"] == "text":

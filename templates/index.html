@@ -54,7 +54,7 @@
       } catch (_) { }
     })();
   </script>
-  <link rel="stylesheet" href="/static/style.css?v=20260305v404" />
+  <link rel="stylesheet" href="/static/style.css?v=20260305v406" />
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 </head>
 
@@ -363,6 +363,12 @@
               <div id="cardStyleGallery" class="card-style-gallery" role="listbox" aria-label="卡片样式预览"></div>
               <p class="settings-inline-hint">点击小图即可切换样式</p>
             </label>
+            <label class="font-preset-field">字体方案
+              <select id="fontPreset">
+                <option value="source_han_sans">思源黑体</option>
+                <option value="lxgw_wenkai">霞鹜文楷</option>
+              </select>
+            </label>
             <label>
               <span class="range-label"><span>卡片透明度</span><span id="cardOpacityValue"
                   class="range-value">100%</span></span>
@@ -621,8 +627,8 @@
   </div>
 
   <script src="/static/poster_text_tools.js?v=20260305v405"></script>
-  <script src="/static/poster_renderer.js?v=20260305v405"></script>
-  <script src="/static/app.js?v=20260305v405"></script>
+  <script src="/static/poster_renderer.js?v=20260305v406"></script>
+  <script src="/static/app.js?v=20260305v406"></script>
 </body>
 
 </html>

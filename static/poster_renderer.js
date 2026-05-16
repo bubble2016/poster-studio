@@ -4,12 +4,19 @@
   const CANVAS_WIDTH = 1080;
   const CANVAS_HEIGHT = 1920;
   const CLIENT_RENDER_DISABLE_KEY = "poster_client_render_disabled_v1";
+  const FONT_ASSET_VERSION = "20260513v2";
   const FONT_REGULAR = "PosterCNSans";
   const FONT_BOLD = "PosterCNSansBold";
   const FONT_NUMBER = "PosterNumber";
+  const FONT_LXGW_WENKAI = "PosterLXGWWenKai";
+  const FONT_LXGW_WENKAI_BOLD = "PosterLXGWWenKaiBold";
+  const FONT_PRESETS = Object.freeze({
+    source_han_sans: { regular: FONT_REGULAR, bold: FONT_BOLD },
+    lxgw_wenkai: { regular: FONT_LXGW_WENKAI, bold: FONT_LXGW_WENKAI_BOLD },
+  });
   const PRICE_UNIT_DEFAULT = "元/吨";
   const loadedImageCache = new Map();
-  let fontPromise = null;
+  const fontPromises = new Map();
 
   const DEFAULT_CONFIG = {
     shop_name: "环太平洋废纸回收打包站",
@@ -29,6 +36,7 @@
     theme_color: "#B22222",
     price_color_mode: "semantic",
     price_style: "amethyst",
+    font_preset: "source_han_sans",
     batch_adjust_note_mode: "none",
     watermark_enabled: false,
     watermark_text: "仅供客户参考",
@@ -76,6 +84,20 @@
     return `${Math.round(size)}px "${fam}", "Microsoft YaHei", "Noto Sans SC", sans-serif`;
   }
 
+  function normalizeFontPreset(value) {
+    const key = String(value || "").trim().toLowerCase();
+    if (!key || key === "default") return DEFAULT_CONFIG.font_preset;
+    return Object.prototype.hasOwnProperty.call(FONT_PRESETS, key) ? key : DEFAULT_CONFIG.font_preset;
+  }
+
+  function fontForPreset(value) {
+    const preset = FONT_PRESETS[normalizeFontPreset(value)] || FONT_PRESETS.source_han_sans;
+    return (size, weight = "regular", family = "") => {
+      const fam = family || (weight === "number" ? FONT_NUMBER : weight === "bold" ? preset.bold : preset.regular);
+      return font(size, "regular", fam);
+    };
+  }
+
   async function loadFontFace(name, url, descriptors) {
     if (!("FontFace" in window)) return false;
     const face = new FontFace(name, `url("${url}")`, descriptors || {});
@@ -84,17 +106,34 @@
     return true;
   }
 
-  async function ensureFonts() {
-    if (fontPromise) return fontPromise;
-    fontPromise = Promise.all([
-      loadFontFace(FONT_REGULAR, "/font/SourceHanSansSC-Regular.otf"),
-      loadFontFace(FONT_BOLD, "/font/SourceHanSansSC-Bold.otf", { weight: "700" }),
-      loadFontFace(FONT_NUMBER, "/font/Bahnschrift.ttf"),
-    ]).then(async () => {
+  function fontUrl(filename) {
+    return `/font/${filename}?v=${FONT_ASSET_VERSION}`;
+  }
+
+  function getFontFaceLoads(presetValue) {
+    const preset = normalizeFontPreset(presetValue);
+    const common = [loadFontFace(FONT_NUMBER, fontUrl("Bahnschrift.ttf"))];
+    if (preset === "lxgw_wenkai") {
+      return common.concat([
+        loadFontFace(FONT_LXGW_WENKAI, fontUrl("LXGWWenKai-Regular.ttf")),
+        loadFontFace(FONT_LXGW_WENKAI_BOLD, fontUrl("LXGWWenKai-Medium.ttf")),
+      ]);
+    }
+    return common.concat([
+      loadFontFace(FONT_REGULAR, fontUrl("SourceHanSansSC-Regular.otf")),
+      loadFontFace(FONT_BOLD, fontUrl("SourceHanSansSC-Bold.otf"), { weight: "700" }),
+    ]);
+  }
+
+  async function ensureFonts(presetValue) {
+    const preset = normalizeFontPreset(presetValue);
+    if (fontPromises.has(preset)) return fontPromises.get(preset);
+    const promise = Promise.all(getFontFaceLoads(preset)).then(async () => {
       if (document.fonts?.ready) await document.fonts.ready;
       return true;
     });
-    return fontPromise;
+    fontPromises.set(preset, promise);
+    return promise;
   }
 
   function loadImage(path) {
@@ -214,7 +253,7 @@
     return lines.length ? lines : [""];
   }
 
-  function calculateLayout(ctx, lines, cw, isNotice) {
+  function calculateLayout(ctx, lines, cw, isNotice, posterFont) {
     const layout = [];
     let total = 0;
     let rowIdx = 0;
@@ -243,7 +282,7 @@
       const isBlessing = isNotice && line.includes("祝") && (line.includes("快乐") || line.includes("幸福") || line.includes("兴隆"));
       const size = isNote ? 42 : isNotice ? 43 : 38;
       const lineHeight = isNote ? 65 : isNotice ? 74 : 55;
-      const fontCss = font(size, isNote || isSalutation || isBlessing ? "bold" : "regular");
+      const fontCss = posterFont(size, isNote || isSalutation || isBlessing ? "bold" : "regular");
       const maxWidth = isNotice ? cw - 180 : cw - 120;
       const wrapped = wrapLine(ctx, line, maxWidth, fontCss);
       const height = wrapped.length * lineHeight;
@@ -338,13 +377,13 @@
     return String(text || "").replace(/\s*[（(](上调|下调|↑|↓)\s*(\d{1,5})\s*(?:元)?[)）]\s*/g, "");
   }
 
-  function drawPriceValueRight(ctx, text, rightX, baseY, color) {
+  function drawPriceValueRight(ctx, text, rightX, baseY, color, posterFont) {
     const segments = String(text || "").trim().match(/\d+(?:\.\d+)?|[^\d]+/g) || [];
     let x = rightX;
     for (let i = segments.length - 1; i >= 0; i -= 1) {
       const seg = segments[i];
       const isNumber = /^\d+(?:\.\d+)?$/.test(seg);
-      ctx.font = isNumber ? font(65, "number") : font(45, "regular");
+      ctx.font = isNumber ? posterFont(65, "number") : posterFont(45, "regular");
       ctx.fillStyle = color;
       ctx.textAlign = "right";
       ctx.textBaseline = "alphabetic";
@@ -353,7 +392,7 @@
     }
   }
 
-  function drawWatermark(ctx, cfg) {
+  function drawWatermark(ctx, cfg, posterFont) {
     if (!cfg.watermark_enabled || !cfg.watermark_text) return;
     const text = String(cfg.watermark_text || "");
     const opacity = Math.max(0, Math.min(0.8, Number(cfg.watermark_opacity || 0.15)));
@@ -361,7 +400,7 @@
     ctx.save();
     ctx.translate(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
     ctx.rotate((30 * Math.PI) / 180);
-    ctx.font = font(48, "regular");
+    ctx.font = posterFont(48, "regular");
     ctx.fillStyle = `rgba(128,128,128,${opacity})`;
     const width = ctx.measureText(text).width;
     const sx = Math.max(width + 36, (width + 150) / density);
@@ -386,9 +425,10 @@
   async function renderToCanvas(payload) {
     if (!isEnabled()) throw new Error("浏览器端渲染已关闭");
     if (!document.createElement("canvas").getContext) throw new Error("当前浏览器不支持 Canvas");
-    await ensureFonts();
 
     const cfg = { ...DEFAULT_CONFIG, ...(payload?.config || {}) };
+    await ensureFonts(cfg.font_preset);
+    const posterFont = fontForPreset(cfg.font_preset);
     const title = String(payload?.title || "调价通知");
     const date = String(payload?.date || "");
     const content = normalizeContentForRender(payload?.content || "");
@@ -412,7 +452,7 @@
     const cx = (CANVAS_WIDTH - cw) / 2;
     const lines = content.split("\n");
     const isNotice = usesTextNoticeLayout(title, cfg);
-    const calculated = calculateLayout(ctx, lines, cw, isNotice);
+    const calculated = calculateLayout(ctx, lines, cw, isNotice, posterFont);
     const ch = Math.min(1800, Math.max(900, 500 + calculated.total - 10 + 460));
     const cy = (CANVAS_HEIGHT - ch) / 2;
     const footerStartY = cy + 500 + calculated.total - 10;
@@ -436,11 +476,11 @@
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     ctx.fillStyle = isNotice ? "#8F1D1D" : "#000000";
-    ctx.font = font(isNotice ? 81 : 75, "bold");
+    ctx.font = posterFont(isNotice ? 81 : 75, "bold");
     ctx.fillText(title || "调价通知", CANVAS_WIDTH / 2, cur);
     cur += 100;
     ctx.fillStyle = isNotice ? "#A16262" : "gray";
-    ctx.font = font(35);
+    ctx.font = posterFont(35);
     ctx.fillText(normalizeDateForRender(date), CANVAS_WIDTH / 2, cur);
     cur += 60;
     ctx.strokeStyle = isNotice ? "#EFCACA" : "#F0F0F0";
@@ -467,7 +507,7 @@
         const rawValue = parts.join(":");
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
-        ctx.font = font(45);
+        ctx.font = posterFont(45);
         ctx.fillStyle = "rgb(48,52,58)";
         ctx.fillText(key, cx + 60, cur + 30);
 
@@ -482,15 +522,15 @@
         const baseY = cur + 53;
         const rx = cx + cw - 60;
         if (split.unit) {
-          ctx.font = font(30);
+          ctx.font = posterFont(30);
           ctx.fillStyle = valueColor === themeHex ? rgba(themeUnitRgb, 1) : valueColor;
           ctx.textAlign = "right";
           ctx.textBaseline = "alphabetic";
           ctx.fillText(split.unit === "/吨" ? PRICE_UNIT_DEFAULT : split.unit, rx, baseY);
-          const unitWidth = measureTextWidth(ctx, split.unit === "/吨" ? PRICE_UNIT_DEFAULT : split.unit, font(30));
-          drawPriceValueRight(ctx, split.value, rx - unitWidth - 8, baseY, valueColor);
+          const unitWidth = measureTextWidth(ctx, split.unit === "/吨" ? PRICE_UNIT_DEFAULT : split.unit, posterFont(30));
+          drawPriceValueRight(ctx, split.value, rx - unitWidth - 8, baseY, valueColor, posterFont);
         } else {
-          drawPriceValueRight(ctx, displayValue, rx, baseY, valueColor);
+          drawPriceValueRight(ctx, displayValue, rx, baseY, valueColor, posterFont);
         }
         cur += 85;
         return;
@@ -518,7 +558,7 @@
         }
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        ctx.font = font(size, weight);
+        ctx.font = posterFont(size, weight);
         ctx.fillStyle = color;
         item.lines.forEach((line) => {
           ctx.fillText(line, cx + 60, cur);
@@ -552,43 +592,43 @@
       ctx.textAlign = "right";
       ctx.textBaseline = "top";
       ctx.fillStyle = "#444444";
-      ctx.font = font(44, "bold");
+      ctx.font = posterFont(44, "bold");
       ctx.fillText(String(cfg.shop_name || ""), rx, qy + 10);
       if (cfg.phone) {
-        ctx.font = font(36);
+        ctx.font = posterFont(36);
         ctx.fillStyle = "#888888";
         ctx.fillText(`电话：${cfg.phone}`, rx, qy + 95);
       }
       if (cfg.address) {
-        ctx.font = font(26);
+        ctx.font = posterFont(26);
         ctx.fillStyle = "#888888";
         ctx.fillText(`地址：${cfg.address}`, rx, qy + 180);
       }
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = font(35, "bold");
+      ctx.font = posterFont(35, "bold");
       ctx.fillStyle = "#5CAF5F";
       ctx.fillText(String(cfg.slogan || ""), CANVAS_WIDTH / 2, footerStartY + 400);
     } else {
       let cy2 = footerStartY + 60;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = font(42, "bold");
+      ctx.font = posterFont(42, "bold");
       ctx.fillStyle = "#444444";
       ctx.fillText(String(cfg.shop_name || ""), CANVAS_WIDTH / 2, cy2);
       cy2 += 80;
       if (cfg.phone) {
-        ctx.font = font(36);
+        ctx.font = posterFont(36);
         ctx.fillStyle = "#999999";
         ctx.fillText(`电话：${cfg.phone}`, CANVAS_WIDTH / 2, cy2);
       }
       cy2 += 70;
       if (cfg.address) {
-        ctx.font = font(28);
+        ctx.font = posterFont(28);
         ctx.fillStyle = "#999999";
         ctx.fillText(`地址：${cfg.address}`, CANVAS_WIDTH / 2, cy2);
       }
-      ctx.font = font(35, "bold");
+      ctx.font = posterFont(35, "bold");
       ctx.fillStyle = "#5CAF5F";
       ctx.fillText(String(cfg.slogan || ""), CANVAS_WIDTH / 2, cy2 + 100);
     }
@@ -606,7 +646,7 @@
       ctx.restore();
     }
 
-    drawWatermark(ctx, cfg);
+    drawWatermark(ctx, cfg, posterFont);
     return canvas;
   }
 

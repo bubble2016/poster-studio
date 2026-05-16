@@ -24,6 +24,7 @@ const UPLOAD_PREVIEW_FIELDS = [
   { key: "qrcode_image_path", thumbId: "qrThumb", wrapId: "qrThumbWrap", removeBtnId: "qrThumbRemoveBtn", uploadInputId: "qrUpload", label: "二维码" },
 ];
 const AVAILABLE_CARD_STYLES = new Set(["single", "stack", "block", "flip", "ticket", "double", "aurora", "paper_relief"]);
+const AVAILABLE_FONT_PRESETS = new Set(["source_han_sans", "lxgw_wenkai"]);
 const LEGACY_CARD_STYLE_MAP = Object.freeze({
   soft: "single",
   outline_pro: "single",
@@ -272,6 +273,12 @@ function syncAllRangeValues() {
 function normalizeCardStyle(style) {
   const savedStyle = LEGACY_CARD_STYLE_MAP[style] || style || "single";
   return AVAILABLE_CARD_STYLES.has(savedStyle) ? savedStyle : "single";
+}
+
+function normalizeFontPreset(value) {
+  const preset = String(value || "").trim().toLowerCase();
+  if (!preset || preset === "default") return "source_han_sans";
+  return AVAILABLE_FONT_PRESETS.has(preset) ? preset : "source_han_sans";
 }
 
 function syncCardStyleGallery() {
@@ -1566,6 +1573,7 @@ function restoreSettingsSnapshot() {
   $("themeColor").value = cfg.theme_color || "#B22222";
   syncThemeColorUi($("themeColor").value);
   $("cardStyle").value = normalizeCardStyle(cfg.card_style);
+  $("fontPreset").value = normalizeFontPreset(cfg.font_preset);
   $("priceColorMode").value = cfg.price_color_mode || "semantic";
   $("batchAdjustNoteMode").value = normalizeBatchAdjustNoteMode(cfg.batch_adjust_note_mode, !!cfg.batch_adjust_show_note);
   $("shopName").value = cfg.shop_name || "";
@@ -1622,6 +1630,7 @@ function formConfig() {
     last_template: $("templateSelect")?.value || state.config.last_template || "",
     theme_color: $("themeColor").value,
     card_style: $("cardStyle").value,
+    font_preset: normalizeFontPreset($("fontPreset")?.value),
     price_color_mode: $("priceColorMode").value,
     batch_adjust_note_mode: getBatchAdjustNoteMode(),
     shop_name: $("shopName").value.trim(),
@@ -1650,6 +1659,7 @@ function bindFromConfig(cfg) {
   $("themeColor").value = cfg.theme_color || "#B22222";
   syncThemeColorUi($("themeColor").value);
   $("cardStyle").value = normalizeCardStyle(cfg.card_style);
+  $("fontPreset").value = normalizeFontPreset(cfg.font_preset);
   $("priceColorMode").value = cfg.price_color_mode || "semantic";
   $("batchAdjustNoteMode").value = normalizeBatchAdjustNoteMode(cfg.batch_adjust_note_mode, !!cfg.batch_adjust_show_note);
   $("shopName").value = cfg.shop_name || "";
@@ -3075,7 +3085,7 @@ async function init() {
   const watchIds = [
     "titleInput", "dateInput", "contentInput",
     "shopName", "phone", "address", "slogan",
-    "themeColor", "cardStyle", "bgBlur", "bgBrightness",
+    "themeColor", "cardStyle", "fontPreset", "bgBlur", "bgBrightness",
     "priceColorMode", "batchAdjustNoteMode", "cardOpacity", "stampOpacity", "watermarkEnabled",
     "watermarkText", "watermarkOpacity", "watermarkDensity", "exportFormat",
   ];
