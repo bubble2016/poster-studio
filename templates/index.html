@@ -192,6 +192,20 @@
               </span>
             </label>
           </div>
+          <div class="quick-controls" aria-label="常用操作">
+            <label>模板
+              <select id="templateSelect"></select>
+            </label>
+            <label>导出
+              <select id="exportFormat">
+                <option>PNG</option>
+                <option>JPEG</option>
+                <option>PDF</option>
+              </select>
+            </label>
+            <button class="mini-btn" id="quickRandomBgBtn" type="button">换背景</button>
+            <button class="mini-btn" id="quickRandomLogoBtn" type="button">换 Logo</button>
+          </div>
           <div class="row">
             <button class="mini-btn" id="todayBtn">今天</button>
             <button class="mini-btn" id="tomorrowBtn">+1 天</button>
@@ -234,7 +248,10 @@
               <textarea id="priceEditorExtra" rows="4" placeholder="例如：温馨提示、假期通知等"></textarea>
             </label>
           </div>
-          <div class="stats" id="statsText">0 字 · 0 行</div>
+          <div class="stats">
+            <span id="autosaveStatus">准备保存</span>
+            <span id="statsText">0 字 · 0 行</span>
+          </div>
         </section>
 
         <section class="card template-manager-card" id="templateManagerCard">
@@ -250,19 +267,7 @@
               </aside>
             </div>
           </div>
-          <div class="field-grid template-manager-body" id="templateManagerBody">
-            <label>模板
-              <select id="templateSelect"></select>
-            </label>
-            <label>导出格式
-              <select id="exportFormat">
-                <option>PNG</option>
-                <option>JPEG</option>
-                <option>PDF</option>
-              </select>
-            </label>
-          </div>
-          <div class="row template-manager-body">
+          <div class="row template-manager-body" id="templateManagerBody">
             <button class="mini-btn" id="saveTemplateBtn">保存模板</button>
             <button class="mini-btn danger" id="deleteTemplateBtn">删除模板</button>
           </div>
@@ -280,6 +285,17 @@
             <a class="action-bar-link action-bar-record" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">豫ICP备2026007593号</a>
           </p>
         </footer>
+        <section id="generationResultPanel" class="generation-result-panel" aria-live="polite" hidden>
+          <div>
+            <strong id="generationResultTitle">已生成</strong>
+            <p id="generationResultMeta">图片已保存，可继续复制文案或再次保存。</p>
+          </div>
+          <div class="generation-result-actions">
+            <button id="resultSaveAgainBtn" class="mini-btn" type="button">再次保存</button>
+            <button id="resultCopyTextBtn" class="mini-btn" type="button">复制文案</button>
+            <button id="resultCloseBtn" class="ghost-btn" type="button" aria-label="关闭生成结果">关闭</button>
+          </div>
+        </section>
       </section>
     </div>
   </main>

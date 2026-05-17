@@ -17,9 +17,17 @@ if not exist "%VENV_PY%" (
     if errorlevel 1 goto :error
 )
 
-echo [2/3] Installing/checking dependencies...
-"%VENV_PY%" -m pip install -r requirements.txt
-if errorlevel 1 goto :error
+echo [2/3] Checking dependencies...
+"%VENV_PY%" -c "import hashlib,pathlib,sys; req=pathlib.Path('requirements.txt'); stamp=pathlib.Path('.venv/requirements.sha256'); h=hashlib.sha256(req.read_bytes()).hexdigest(); sys.exit(0 if stamp.exists() and stamp.read_text().strip()==h else 1)"
+if errorlevel 1 (
+    echo Requirements changed, installing dependencies...
+    "%VENV_PY%" -m pip install -r requirements.txt
+    if errorlevel 1 goto :error
+    "%VENV_PY%" -c "import hashlib,pathlib; req=pathlib.Path('requirements.txt'); stamp=pathlib.Path('.venv/requirements.sha256'); stamp.write_text(hashlib.sha256(req.read_bytes()).hexdigest(), encoding='utf-8')"
+    if errorlevel 1 goto :error
+) else (
+    echo Dependencies unchanged, skipping install.
+)
 
 echo [3/3] Starting Poster Studio...
 echo Open: %URL%

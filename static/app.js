@@ -70,6 +70,9 @@ let previewSlowHintTimer = 0;
 let previewRunwayMaxTravelPx = 0;
 let pageScrollSyncRaf = 0;
 let guestDraftSaveTimer = 0;
+let accountAutosaveTimer = 0;
+let lastAccountAutosaveSnapshot = "";
+let autosaveStatusTimer = 0;
 let activeSettingsTab = "base";
 let settingsTabsLastScrollTop = 0;
 let settingsTabsAutoHidden = false;
@@ -81,6 +84,7 @@ let lastGuestDraftConfigSnapshot = "";
 let lastPreviewPayloadSnapshot = "";
 let previewInFlightPayloadSnapshot = "";
 let activeClientPreviewObjectUrl = "";
+let lastGeneratedResult = null;
 const SETTINGS_TABS_MIN_DELTA = 2;
 const SETTINGS_TABS_HIDE_SCROLL_PX = 56;
 const SETTINGS_TABS_SHOW_SCROLL_PX = 36;
@@ -590,6 +594,62 @@ async function appPrompt(message, defaultValue = "", title = "请输入", placeh
   return ret.value;
 }
 
+async function appBatchAdjustPrompt() {
+  const messageHtml = `
+    <div class="batch-adjust-panel">
+      <div class="batch-adjust-presets" aria-label="常用调价金额">
+        <button type="button" data-adjust-amount="+10">+10</button>
+        <button type="button" data-adjust-amount="+20">+20</button>
+        <button type="button" data-adjust-amount="+30">+30</button>
+        <button type="button" data-adjust-amount="+50">+50</button>
+        <button type="button" data-adjust-amount="-10">-10</button>
+        <button type="button" data-adjust-amount="-20">-20</button>
+        <button type="button" data-adjust-amount="-30">-30</button>
+        <button type="button" data-adjust-amount="-50">-50</button>
+      </div>
+      <label class="batch-adjust-custom">自定义金额
+        <input id="batchAdjustCustomInput" inputmode="numeric" value="+10" placeholder="例如 +50 或 -30" />
+      </label>
+      <p id="batchAdjustPreviewText" class="batch-adjust-preview"></p>
+    </div>
+  `;
+  const priceRows = getPriceEditorRowsFromDom().filter((row) => ["number", "range"].includes(row.mode || "number")).length;
+  const dialogPromise = openDialog({
+    mode: "confirm",
+    title: "批量调价",
+    messageHtml,
+    confirmText: "应用调价",
+    cancelText: "取消",
+  });
+  const input = $("batchAdjustCustomInput");
+  const preview = $("batchAdjustPreviewText");
+  const syncPreview = () => {
+    const value = String(input?.value || "").trim();
+    if (!preview) return;
+    preview.textContent = priceRows > 0
+      ? `将调整 ${priceRows} 条价格；输入正数为上调，负数为下调。`
+      : "当前没有可批量调整的单价或区间行。";
+    preview.dataset.value = value;
+  };
+  document.querySelectorAll("[data-adjust-amount]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!input) return;
+      input.value = btn.dataset.adjustAmount || "+10";
+      input.focus();
+      syncPreview();
+    });
+  });
+  input?.addEventListener("input", () => {
+    input.value = input.value.replace(/\s+/g, "").replace("＋", "+").replace("－", "-");
+    syncPreview();
+  });
+  syncPreview();
+  setTimeout(() => input?.focus(), 0);
+  const ok = await dialogPromise;
+  if (ok !== true) return null;
+  return input?.value || "";
+}
+
 function buildCopyTextForGeneratedPoster() {
   const title = $("titleInput")?.value.trim() || "";
   const date = $("dateInput")?.value.trim() || "";
@@ -713,6 +773,60 @@ async function openCopyTextDialog(text, showRegisterTip = false) {
   await dialogPromise;
 }
 
+function closeGenerationResultPanel() {
+  const panel = $("generationResultPanel");
+  if (!panel) return;
+  panel.hidden = true;
+  document.body.classList.remove("has-generation-result");
+}
+
+function showGenerationResultPanel(options = {}) {
+  const panel = $("generationResultPanel");
+  if (!panel) return;
+  lastGeneratedResult = {
+    filePath: options.filePath || "",
+    fileName: options.fileName || "",
+    blob: options.blob || null,
+    copyText: options.copyText || "",
+  };
+  const title = $("generationResultTitle");
+  const meta = $("generationResultMeta");
+  const copyBtn = $("resultCopyTextBtn");
+  const saveBtn = $("resultSaveAgainBtn");
+  if (title) title.textContent = options.inWechat ? "图片已生成" : "已生成并保存";
+  if (meta) {
+    const tip = options.showRegisterTip ? " 注册后可跨设备保留设置。" : "";
+    meta.textContent = options.inWechat ? `请长按图片保存或转发。${tip}` : `可继续复制文案，或需要时再次保存图片。${tip}`;
+  }
+  if (copyBtn) copyBtn.disabled = !lastGeneratedResult.copyText.trim();
+  if (saveBtn) saveBtn.disabled = !lastGeneratedResult.blob && !lastGeneratedResult.filePath;
+  panel.hidden = false;
+  document.body.classList.add("has-generation-result");
+}
+
+async function saveGeneratedAgain() {
+  if (!lastGeneratedResult) return;
+  if (lastGeneratedResult.blob) {
+    const ok = triggerBlobDownload(lastGeneratedResult.blob, lastGeneratedResult.fileName);
+    showToast(ok ? "已再次保存" : "保存失败，请重试");
+    return;
+  }
+  if (lastGeneratedResult.filePath) {
+    const ok = await handleGeneratedFile(lastGeneratedResult.filePath, lastGeneratedResult.fileName, lastGeneratedResult.copyText);
+    showToast(ok ? "已再次保存" : "保存失败，请重试");
+  }
+}
+
+async function copyGeneratedResultText() {
+  const text = lastGeneratedResult?.copyText || buildCopyTextForGeneratedPoster();
+  if (!text.trim()) {
+    showToast("当前文案为空");
+    return;
+  }
+  const ok = await copyTextToClipboard(text);
+  showToast(ok ? "文案已复制" : "复制失败，请手动复制");
+}
+
 function showStatusError(msg) {
   $("statusText").textContent = msg || "操作失败，请重试";
 }
@@ -733,6 +847,44 @@ function showToast(message, duration = 3000) {
     toast.classList.add("is-fading");
     setTimeout(() => toast.remove(), 300);
   }, duration);
+}
+
+function showUndoToast(message, undoText, onUndo, duration = 8000) {
+  let container = $("toastContainer");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "toastContainer";
+    container.className = "toast-container";
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement("div");
+  toast.className = "toast toast-with-action";
+  const label = document.createElement("span");
+  label.textContent = message;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "toast-action";
+  btn.textContent = undoText || "撤销";
+  toast.append(label, btn);
+  container.appendChild(toast);
+
+  let done = false;
+  const close = () => {
+    if (done) return;
+    done = true;
+    toast.classList.add("is-fading");
+    setTimeout(() => toast.remove(), 300);
+  };
+  const timer = setTimeout(close, duration);
+  btn.addEventListener("click", async () => {
+    clearTimeout(timer);
+    btn.disabled = true;
+    try {
+      await onUndo?.();
+    } finally {
+      close();
+    }
+  });
 }
 
 function vibrate(pattern = 10) {
@@ -835,6 +987,58 @@ function syncFooterNoteVisibility() {
     bar.classList.toggle("is-dock-visible", showDock);
   }
   note.classList.toggle("is-visible", remain <= BOTTOM_DOCK_TRIGGER_PX);
+}
+
+function formatClockTime(date = new Date()) {
+  const h = String(date.getHours()).padStart(2, "0");
+  const m = String(date.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
+}
+
+function setAutosaveStatus(text, tone = "") {
+  const el = $("autosaveStatus");
+  if (!el) return;
+  el.textContent = text || "";
+  el.dataset.tone = tone || "";
+}
+
+function markAutosavePending() {
+  setAutosaveStatus("保存中...", "pending");
+}
+
+function markAutosaveSaved(label = "已自动保存") {
+  setAutosaveStatus(`${label} ${formatClockTime()}`, "saved");
+  if (autosaveStatusTimer) window.clearTimeout(autosaveStatusTimer);
+  autosaveStatusTimer = window.setTimeout(() => {
+    const el = $("autosaveStatus");
+    if (el?.dataset.tone === "saved") el.textContent = `已保存 ${formatClockTime()}`;
+  }, 2400);
+}
+
+async function saveAccountDraftNow(config, snapshot) {
+  const d = await api("/api/config", "POST", config);
+  state.config = { ...state.config, ...(d?.config || config) };
+  lastAccountAutosaveSnapshot = snapshot;
+  markAutosaveSaved("已同步");
+}
+
+function scheduleAccountDraftSave(config, snapshot, defer) {
+  if (accountAutosaveTimer) {
+    window.clearTimeout(accountAutosaveTimer);
+    accountAutosaveTimer = 0;
+  }
+  markAutosavePending();
+  const run = () => {
+    accountAutosaveTimer = 0;
+    saveAccountDraftNow(config, snapshot).catch((e) => {
+      setAutosaveStatus(e?.message || "自动保存失败", "error");
+    });
+  };
+  if (defer) {
+    accountAutosaveTimer = window.setTimeout(run, 1200);
+    return;
+  }
+  run();
 }
 
 function runPageScrollSync() {
@@ -1360,36 +1564,52 @@ function writeGuestDraftNow(config, snapshot) {
   localStorage.setItem(GUEST_DRAFT_STORAGE_KEY, JSON.stringify(payload));
   lastGuestDraftConfigSnapshot = snapshot;
   syncSettingsMenuUi();
+  markAutosaveSaved("已保存本地");
 }
 
 function saveGuestDraft(options = {}) {
-  if (!state.isGuest) return;
   const defer = !!options.defer;
+  if (lastGeneratedResult) closeGenerationResultPanel();
   try {
     const config = buildConfigPayloadForSave();
     const snapshot = JSON.stringify(config);
+    if (!state.isGuest) {
+      if (snapshot === lastAccountAutosaveSnapshot) return;
+      scheduleAccountDraftSave(config, snapshot, defer);
+      return;
+    }
     if (snapshot === lastGuestDraftConfigSnapshot) return;
     if (guestDraftSaveTimer) {
       window.clearTimeout(guestDraftSaveTimer);
       guestDraftSaveTimer = 0;
     }
+    markAutosavePending();
     if (defer) {
       guestDraftSaveTimer = window.setTimeout(() => {
         guestDraftSaveTimer = 0;
         try {
           writeGuestDraftNow(config, snapshot);
-        } catch (_) { }
+        } catch (_) {
+          setAutosaveStatus("本地保存失败", "error");
+        }
       }, 220);
       return;
     }
     writeGuestDraftNow(config, snapshot);
-  } catch (_) { }
+  } catch (_) {
+    setAutosaveStatus("自动保存失败", "error");
+  }
 }
 
 async function ensureLogin() {
   const me = await api("/api/me");
   state.currentUser = me.display_user_id || me.user_id || "";
   state.isGuest = !!me.is_guest;
+  try {
+    lastAccountAutosaveSnapshot = JSON.stringify(buildConfigPayloadForSave());
+  } catch (_) {
+    lastAccountAutosaveSnapshot = "";
+  }
   syncSettingsMenuUi();
 }
 
@@ -2406,7 +2626,7 @@ function renderPriceEditorTable() {
 
   if (isMobileLayout()) {
     tbody.innerHTML = state.priceEditorRows.map((row, idx) => `
-      <tr data-row-index="${idx}" class="price-row-summary" tabindex="0">
+      <tr data-row-index="${idx}" class="price-row-summary" tabindex="0" aria-label="编辑 ${escapeAttr(row.name || "未命名纸种")}">
         <td class="price-summary-drag price-sort-handle" aria-hidden="true" title="拖动排序">
           <svg class="drag-handle" viewBox="0 0 24 24">
             <path d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
@@ -2417,11 +2637,6 @@ function renderPriceEditorTable() {
           <span class="price-summary-meta">${escapeAttr(getPriceRowDisplayText(row))}</span>
         </td>
         <td class="price-summary-actions">
-          <button class="price-row-open" data-action="open-row" type="button" aria-label="编辑此行" title="编辑此行">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3 17.25V21h3.75L17.8 9.95l-3.75-3.75L3 17.25zm17.7-10.2a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-            </svg>
-          </button>
           <button class="price-row-remove" data-action="remove-row" type="button" aria-label="删除此行" title="删除此行">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M9 3.75A2.25 2.25 0 0 0 6.75 6H4.5a1 1 0 1 0 0 2h.38l1.03 10.34A2.25 2.25 0 0 0 8.15 20.5h7.7a2.25 2.25 0 0 0 2.24-2.16L19.12 8h.38a1 1 0 1 0 0-2h-2.25A2.25 2.25 0 0 0 15 3.75H9Zm0 2h6a.25.25 0 0 1 .25.25V6h-6.5v-.25A.25.25 0 0 1 9 5.75Zm.25 5a1 1 0 0 1 1 1v4.5a1 1 0 1 1-2 0v-4.5a1 1 0 0 1 1-1Zm5.5 0a1 1 0 0 1 1 1v4.5a1 1 0 1 1-2 0v-4.5a1 1 0 0 1 1-1Z"/>
@@ -2907,7 +3122,7 @@ async function refreshPreview(options = {}) {
     const data = await api("/api/preview", "POST", payload);
     if (seq !== state.previewSeq) return;
     const reqId = data.request_id ? String(data.request_id) : "";
-    const primaryPreviewSrc = data.image_data || data.image_url || data.image;
+    const primaryPreviewSrc = data.image_url || data.image || data.image_data;
     const fallbackPreviewSrc = data.image_url || data.image || "";
     if (!primaryPreviewSrc) throw new Error("预览地址无效");
     const loadPreviewWithRetry = (source, retriesLeft = 1, allowFallback = true) => {
@@ -3001,6 +3216,11 @@ async function init() {
   state.defaultLogos = data.default_logos || [];
 
   bindFromConfig(state.config);
+  try {
+    lastAccountAutosaveSnapshot = JSON.stringify(buildConfigPayloadForSave());
+    lastGuestDraftConfigSnapshot ||= state.isGuest ? lastAccountAutosaveSnapshot : "";
+  } catch (_) { }
+  markAutosaveSaved(state.isGuest ? "本地草稿" : "已同步");
   renderPresetGrid();
   state.lastDateCheckKey = toDayKey();
 
@@ -3111,6 +3331,32 @@ async function init() {
   });
   $("settingsMenuPanelBtn").addEventListener("click", openSettingsModal);
   $("settingsMenuAuthBtn").addEventListener("click", handleSettingsMenuAuthAction);
+  $("quickRandomBgBtn")?.addEventListener("click", async () => {
+    const nextPath = pickRandomDifferentPath(state.presets, state.config.bg_image_path);
+    if (!nextPath) {
+      showToast("暂无可用背景预设");
+      return;
+    }
+    state.config.bg_mode = "preset";
+    state.config.bg_image_path = nextPath;
+    renderPresetGrid();
+    renderUploadThumb("bg_image_path", nextPath);
+    saveGuestDraft();
+    await refreshPreview();
+    $("statusText").textContent = "已随机切换背景";
+  });
+  $("quickRandomLogoBtn")?.addEventListener("click", async () => {
+    const nextPath = pickRandomDifferentPath(state.defaultLogos, state.config.logo_image_path);
+    if (!nextPath) {
+      showToast("暂无可用默认 Logo");
+      return;
+    }
+    state.config.logo_image_path = nextPath;
+    renderUploadThumb("logo_image_path", nextPath);
+    saveGuestDraft();
+    await refreshPreview();
+    $("statusText").textContent = "已随机切换 Logo";
+  });
   $("clearGuestDraftBtn").addEventListener("click", async () => {
     closeSettingsMenu();
     if (!state.isGuest) return;
@@ -3129,6 +3375,20 @@ async function init() {
     if (!menu || menu.hidden) return;
     if (menu.contains(e.target) || btn?.contains(e.target)) return;
     closeSettingsMenu();
+  });
+  document.addEventListener("focusin", (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.matches("input, textarea, select")) {
+      document.body.classList.add("is-editing-field");
+    }
+  });
+  document.addEventListener("focusout", () => {
+    setTimeout(() => {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active.matches("input, textarea, select")) return;
+      document.body.classList.remove("is-editing-field");
+    }, 0);
   });
   $("closeSettingsBtn2").addEventListener("click", () => { restoreSettingsSnapshot(); closeSettingsModal(); });
   $("settingsMask").addEventListener("click", closeSettingsModal);
@@ -3168,6 +3428,9 @@ async function init() {
     if (!input) return;
     input.value = input.value.replace(/\r?\n/g, "");
   });
+  $("resultSaveAgainBtn")?.addEventListener("click", saveGeneratedAgain);
+  $("resultCopyTextBtn")?.addEventListener("click", copyGeneratedResultText);
+  $("resultCloseBtn")?.addEventListener("click", closeGenerationResultPanel);
   $("cancelLogoCropBtn").addEventListener("click", closeLogoCropModal);
   $("logoCropMask").addEventListener("click", closeLogoCropModal);
   $("addPriceRowBtn").addEventListener("click", () => {
@@ -3498,7 +3761,7 @@ async function init() {
   });
 
   $("batchBtn").addEventListener("click", async () => {
-    const raw = await appPrompt("输入调整金额（如 +50 或 -30）", "+10", "批量调价", "例如 +50 或 -30");
+    const raw = await appBatchAdjustPrompt();
     if (!raw) return;
     const cleaned = String(raw).trim().replace(/\s+/g, "").replace("＋", "+").replace("－", "-");
     const m = cleaned.match(/^([+-]?)(\d{1,5})$/);
@@ -3508,6 +3771,7 @@ async function init() {
     }
     const sign = m[1] === "-" ? -1 : 1;
     const amount = sign * Number(m[2]);
+    const beforeContent = $("contentInput").value;
     try {
       let d;
       try {
@@ -3531,6 +3795,13 @@ async function init() {
       updateStats();
       saveGuestDraft();
       await refreshPreview();
+      showUndoToast(`已批量${amount >= 0 ? "上调" : "下调"} ${Math.abs(amount)}`, "撤销", async () => {
+        $("contentInput").value = beforeContent;
+        syncMainPriceEditorFromContent();
+        updateStats();
+        saveGuestDraft();
+        await refreshPreview({ force: true });
+      });
     } catch (e) {
       showStatusError(e.message || "批量调价失败");
     }
@@ -3730,11 +4001,15 @@ async function init() {
             btn.textContent = btn.dataset.originText || "生成";
             btn.classList.remove("is-success");
           }, 2000);
-          if (!inWechat) {
-            const showRegTip = state.isGuest && !state.guestRegisterTipShown;
-            if (showRegTip) state.guestRegisterTipShown = true;
-            await openCopyTextDialog(buildCopyTextForGeneratedPoster(), showRegTip);
-          }
+          const showRegTip = state.isGuest && !state.guestRegisterTipShown;
+          if (showRegTip) state.guestRegisterTipShown = true;
+          showGenerationResultPanel({
+            blob: rendered.blob,
+            fileName,
+            copyText: buildCopyTextForGeneratedPoster(),
+            showRegisterTip: showRegTip,
+            inWechat,
+          });
           return;
         } catch (clientError) {
           console.warn("client_generate_failed", clientError);
@@ -3753,11 +4028,15 @@ async function init() {
         btn.textContent = btn.dataset.originText || "生成";
         btn.classList.remove("is-success");
       }, 2000);
-      if (!inWechat) {
-        const showRegTip = state.isGuest && !state.guestRegisterTipShown;
-        if (showRegTip) state.guestRegisterTipShown = true;
-        await openCopyTextDialog(buildCopyTextForGeneratedPoster(), showRegTip);
-      }
+      const showRegTip = state.isGuest && !state.guestRegisterTipShown;
+      if (showRegTip) state.guestRegisterTipShown = true;
+      showGenerationResultPanel({
+        filePath: d.file,
+        fileName: d.name || "",
+        copyText: d.copy_text || buildCopyTextForGeneratedPoster(),
+        showRegisterTip: showRegTip,
+        inWechat,
+      });
     } catch (e) {
       showStatusError(e.message || "生成失败");
     } finally {

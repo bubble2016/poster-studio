@@ -1,5 +1,4 @@
-﻿import base64
-import datetime
+﻿import datetime
 import hashlib
 import io
 import json
@@ -1245,7 +1244,6 @@ def api_preview():
             img.convert("RGB").save(buf, "PNG")
             png_bytes = buf.getvalue()
             PREVIEW_CACHE.set(uid, cache_id, png_bytes)
-        image_data = "data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii")
         valid, warnings = validate_content(content)
         image_url = f"/api/preview-image/{cache_id}"
         _log_event(
@@ -1261,7 +1259,6 @@ def api_preview():
             {
                 "image": image_url,
                 "image_url": image_url,
-                "image_data": image_data,
                 "cache_hit": cache_hit,
                 "request_id": getattr(g, "request_id", ""),
                 "date": date_str,

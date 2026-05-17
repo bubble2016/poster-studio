@@ -332,7 +332,7 @@ p {
   position: relative;
 }
 
-.template-manager-body .tm-native-select {
+:where(.template-manager-body, .quick-controls) .tm-native-select {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -341,12 +341,12 @@ p {
   inset: auto;
 }
 
-.template-manager-body .tm-select {
+:where(.template-manager-body, .quick-controls) .tm-select {
   position: relative;
   z-index: 10;
 }
 
-.template-manager-body .tm-select-trigger {
+:where(.template-manager-body, .quick-controls) .tm-select-trigger {
   width: 100%;
   appearance: none;
   -webkit-appearance: none;
@@ -367,19 +367,19 @@ p {
   cursor: pointer;
 }
 
-.template-manager-body .tm-select-trigger:hover {
+:where(.template-manager-body, .quick-controls) .tm-select-trigger:hover {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .98), 0 10px 22px rgba(15, 23, 42, .11);
 }
 
-.template-manager-body .tm-select.is-open .tm-select-trigger,
-.template-manager-body .tm-select-trigger:focus,
-.template-manager-body .tm-select-trigger:focus-visible {
+:where(.template-manager-body, .quick-controls) .tm-select.is-open .tm-select-trigger,
+:where(.template-manager-body, .quick-controls) .tm-select-trigger:focus,
+:where(.template-manager-body, .quick-controls) .tm-select-trigger:focus-visible {
   outline: none;
   border-color: rgba(11, 143, 122, .62);
   box-shadow: 0 0 0 3px rgba(11, 143, 122, .14), 0 12px 24px rgba(15, 23, 42, .13);
 }
 
-.template-manager-body .tm-select-panel {
+:where(.template-manager-body, .quick-controls) .tm-select-panel {
   position: absolute;
   top: auto;
   bottom: calc(100% + 8px);
@@ -400,7 +400,7 @@ p {
   transition: opacity .2s ease, transform .2s ease, visibility 0s linear .2s;
 }
 
-.template-manager-body .tm-select.is-open .tm-select-panel {
+:where(.template-manager-body, .quick-controls) .tm-select.is-open .tm-select-panel {
   opacity: 1;
   transform: translateY(0) scale(1);
   visibility: visible;
@@ -408,7 +408,13 @@ p {
   transition: opacity .2s ease, transform .2s ease, visibility 0s linear 0s;
 }
 
-.template-manager-body .tm-select-list {
+.quick-controls .tm-select-panel {
+  top: calc(100% + 6px);
+  bottom: auto;
+  transform-origin: top center;
+}
+
+:where(.template-manager-body, .quick-controls) .tm-select-list {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -418,7 +424,7 @@ p {
   gap: 4px;
 }
 
-.template-manager-body .tm-select-option {
+:where(.template-manager-body, .quick-controls) .tm-select-option {
   width: 100%;
   min-height: 40px;
   border-radius: 10px;
@@ -432,18 +438,18 @@ p {
   cursor: pointer;
 }
 
-.template-manager-body .tm-select-option:hover {
+:where(.template-manager-body, .quick-controls) .tm-select-option:hover {
   background: rgba(var(--primary-rgb), .10);
   border-color: rgba(var(--primary-rgb), .22);
 }
 
-.template-manager-body .tm-select-option.is-selected {
+:where(.template-manager-body, .quick-controls) .tm-select-option.is-selected {
   background: linear-gradient(90deg, rgba(var(--primary-rgb), .95), rgba(var(--primary-rgb), .78));
   color: #fff;
   border-color: rgba(var(--primary-rgb), .55);
 }
 
-.template-manager-body .tm-select-option:disabled {
+:where(.template-manager-body, .quick-controls) .tm-select-option:disabled {
   opacity: .5;
   cursor: not-allowed;
 }
@@ -790,6 +796,22 @@ input[type="checkbox"] {
   gap: 8px;
 }
 
+.quick-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(96px, .7fr) repeat(2, minmax(92px, .55fr));
+  gap: 8px;
+  align-items: end;
+  margin: 0 0 8px;
+}
+
+.quick-controls label {
+  margin-bottom: 0;
+}
+
+.quick-controls .mini-btn {
+  min-height: 44px;
+}
+
 .date-input-wrap {
   position: relative;
   display: block;
@@ -797,6 +819,7 @@ input[type="checkbox"] {
 
 .date-input-wrap #dateInput {
   padding-right: 42px;
+  min-height: 44px;
 }
 
 #dateInputPicker {
@@ -814,9 +837,9 @@ input[type="checkbox"] {
 .date-input-icon {
   position: absolute;
   right: 0;
-  top: 0;
-  bottom: 0;
-  width: 42px;
+  top: 50%;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -827,6 +850,7 @@ input[type="checkbox"] {
   min-height: 0;
   padding: 0;
   cursor: pointer;
+  transform: translateY(-50%);
   transition: color .16s ease, background .16s ease;
 }
 
@@ -929,7 +953,28 @@ input[type="checkbox"] {
 .stats {
   color: var(--muted);
   font-size: .82rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
   text-align: right;
+}
+
+#autosaveStatus {
+  color: #64748b;
+  text-align: left;
+}
+
+#autosaveStatus[data-tone="pending"] {
+  color: #b45309;
+}
+
+#autosaveStatus[data-tone="saved"] {
+  color: #0f766e;
+}
+
+#autosaveStatus[data-tone="error"] {
+  color: #b42318;
 }
 
 .switch-line {
@@ -1558,6 +1603,25 @@ button:focus-visible {
   animation: toast-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.toast-with-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: 10px;
+  pointer-events: auto;
+}
+
+.toast-action {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .32);
+  background: rgba(255, 255, 255, .12);
+  color: #fff;
+  font-size: .82rem;
+  font-weight: 700;
+}
+
 .toast.is-fading {
   animation: toast-out 0.25s ease both;
 }
@@ -2077,6 +2141,48 @@ button:focus-visible {
   line-height: 1.5;
 }
 
+.batch-adjust-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.batch-adjust-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.batch-adjust-presets button {
+  min-height: 44px;
+  border: 1px solid #d5e1ee;
+  border-radius: 10px;
+  background: #f8fbff;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.batch-adjust-presets button:hover {
+  background: var(--primary-surface);
+  border-color: rgba(var(--primary-rgb), .28);
+}
+
+.batch-adjust-custom {
+  margin-bottom: 0;
+}
+
+.batch-adjust-custom input {
+  min-height: 44px;
+}
+
+.batch-adjust-preview {
+  margin: 0;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: .84rem;
+}
+
 .dialog-danger-text {
   color: #b42318;
   font-weight: 700;
@@ -2453,6 +2559,7 @@ body.no-scroll {
   align-items: center;
   background: transparent;
   pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
 }
 
 body.has-floating-select .template-manager-card {
@@ -2476,6 +2583,54 @@ body.has-floating-select #templateManagerBody.template-manager-body {
   letter-spacing: .02em;
   box-shadow: 0 12px 24px rgba(var(--primary-rgb), .24);
   pointer-events: auto;
+}
+
+.generation-result-panel {
+  position: fixed;
+  left: 50%;
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  z-index: 330;
+  width: min(560px, calc(100vw - 28px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(203, 213, 225, .9);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, .18);
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.generation-result-panel[hidden] {
+  display: none;
+}
+
+.generation-result-panel strong {
+  display: block;
+  color: #0f172a;
+  font-family: var(--font-ui);
+  font-size: .96rem;
+}
+
+.generation-result-panel p {
+  margin: 3px 0 0;
+  font-size: .8rem;
+}
+
+.generation-result-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.generation-result-actions .mini-btn,
+.generation-result-actions .ghost-btn {
+  min-height: 38px;
+  padding: 8px 12px;
+  white-space: nowrap;
 }
 
 .action-bar-note {
@@ -2979,8 +3134,62 @@ body.is-desktop-preview-focus .editor-col {
 }
 
 @media (max-width: 819px) {
+  .app {
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+
+  .quick-controls {
+    grid-template-columns: 1fr 96px;
+  }
+
+  .quick-controls .mini-btn {
+    min-height: 44px;
+  }
+
   .action-bar {
+    position: sticky;
+    left: auto;
+    right: auto;
+    bottom: 0;
     pointer-events: auto;
+    align-items: stretch;
+    margin-top: 8px;
+    padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+    border-radius: 16px 16px 0 0;
+    background: linear-gradient(180deg, rgba(245, 247, 251, 0), rgba(245, 247, 251, .96) 24%, rgba(245, 247, 251, .98));
+  }
+
+  .action-bar .pill-btn {
+    width: 100%;
+    min-height: 50px;
+    border-radius: 14px;
+    font-size: 1rem;
+  }
+
+  body.is-editing-field .action-bar {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(calc(100% + 16px));
+  }
+
+  .generation-result-panel {
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .generation-result-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+  }
+
+  body.is-editing-field .generation-result-panel {
+    display: none;
+  }
+
+  body.has-generation-result .action-bar {
+    opacity: 0;
+    pointer-events: none;
   }
 
   #priceRowDrawerModal .price-drawer-panel {
@@ -3104,9 +3313,9 @@ body.is-desktop-preview-focus .editor-col {
   }
 
   .price-row-remove {
-    width: 32px;
-    min-width: 32px;
-    min-height: 32px;
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
     border-radius: 9px;
     padding: 0;
     gap: 0;
@@ -3229,9 +3438,9 @@ body.is-desktop-preview-focus .editor-col {
   }
 
   .action-bar {
-    position: fixed;
-    left: 0;
-    right: 0;
+    position: sticky;
+    left: auto;
+    right: auto;
     bottom: 0;
     z-index: 320;
   }
@@ -3252,8 +3461,8 @@ body.is-desktop-preview-focus .editor-col {
   }
 
   .action-bar .pill-btn {
-    width: min(240px, calc(100vw - 120px));
-    min-height: 46px;
+    width: 100%;
+    min-height: 50px;
     font-size: 1rem;
   }
 
@@ -3332,7 +3541,7 @@ body.is-desktop-preview-focus .editor-col {
 
 @media (max-width: 600px) {
   .app {
-    padding: 10px 12px 108px;
+    padding: 10px 12px calc(20px + env(safe-area-inset-bottom));
   }
 
   .topbar {
@@ -3441,6 +3650,7 @@ body.is-desktop-preview-focus .editor-col {
   .card,
   .modal-card,
   .template-manager-body .tm-select-panel,
+  .quick-controls .tm-select-panel,
   .settings-tabs {
     backdrop-filter: none;
   }
