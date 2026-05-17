@@ -54,7 +54,7 @@
       } catch (_) { }
     })();
   </script>
-  <link rel="stylesheet" href="/static/style.css?v=20260305v406" />
+  <link rel="stylesheet" href="/static/style.css?v=20260305v407" />
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 </head>
 
@@ -203,14 +203,44 @@
                 <option>PDF</option>
               </select>
             </label>
-            <button class="mini-btn" id="quickRandomBgBtn" type="button">换背景</button>
-            <button class="mini-btn" id="quickRandomLogoBtn" type="button">换 Logo</button>
+            <button class="mini-btn toolbar-btn" id="quickRandomBgBtn" type="button">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4.75 5.5h14.5a1.25 1.25 0 0 1 1.25 1.25v10.5a1.25 1.25 0 0 1-1.25 1.25H4.75a1.25 1.25 0 0 1-1.25-1.25V6.75A1.25 1.25 0 0 1 4.75 5.5Zm0 0 6.5 6.75 2.45-2.35a1 1 0 0 1 1.4.02l5.4 5.58M8.25 9.25h.01" />
+              </svg>
+              <span>换背景</span>
+            </button>
+            <button class="mini-btn toolbar-btn" id="quickRandomLogoBtn" type="button">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3.75 19.25 8v8L12 20.25 4.75 16V8L12 3.75Zm0 0v8.25m7.25-4L12 12m-7.25-4L12 12m-7.25 4L12 12l7.25 4" />
+              </svg>
+              <span>换 Logo</span>
+            </button>
           </div>
-          <div class="row">
-            <button class="mini-btn" id="todayBtn">今天</button>
-            <button class="mini-btn" id="tomorrowBtn">+1 天</button>
-            <button class="mini-btn" id="formatBtn">自动格式化</button>
-            <button class="mini-btn" id="batchBtn">批量调价</button>
+          <div class="row quick-action-row">
+            <button class="mini-btn toolbar-btn" id="todayBtn" type="button">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7.25 3.75v3m9.5-3v3M5.75 6.25h12.5a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5.75a2 2 0 0 1-2-2v-10a2 2 0 0 1 2-2Zm-2 4.75h16.5M8 14h.01m4 0h.01m4 0h.01" />
+              </svg>
+              <span>今天</span>
+            </button>
+            <button class="mini-btn toolbar-btn" id="tomorrowBtn" type="button">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7.25 3.75v3m9.5-3v3M5.75 6.25h12.5a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5.75a2 2 0 0 1-2-2v-10a2 2 0 0 1 2-2Zm-2 4.75h16.5M12 13.75v4m-2-2h4" />
+              </svg>
+              <span>+1 天</span>
+            </button>
+            <button class="mini-btn toolbar-btn" id="formatBtn" type="button">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4.75 6.25h14.5M4.75 11.25h10.5M4.75 16.25h7.5m4.25-1.75 1.25 1.25 2.5-3" />
+              </svg>
+              <span>自动格式化</span>
+            </button>
+            <button class="mini-btn toolbar-btn" id="batchBtn" type="button">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5.25 7.25h13.5M5.25 12h13.5M5.25 16.75h13.5m-9-11.5v13.5m4.5-13.5v13.5" />
+              </svg>
+              <span>批量调价</span>
+            </button>
           </div>
           <textarea id="contentInput" rows="10" hidden placeholder="请输入正文内容"></textarea>
           <div id="priceEditorPanel">
@@ -643,7 +673,7 @@
   </div>
 
   <script src="/static/poster_text_tools.js?v=20260305v405"></script>
-  <script src="/static/poster_renderer.js?v=20260305v406"></script>
+  <script src="/static/poster_renderer.js?v=20260305v407"></script>
   <script src="/static/app.js?v=20260305v406"></script>
 </body>
 

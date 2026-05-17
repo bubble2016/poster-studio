@@ -1495,7 +1495,13 @@ def draw_poster(content, date_str, title, cfg):
             fd.line([(cx + 48, cy + ch - 18 + i), (cx + cw - 48, cy + ch - 18 + i)], fill=(68, 84, 106, a), width=1)
         flip_overlay = frame.filter(ImageFilter.GaussianBlur(0.7))
     else:
-        dc.rounded_rectangle([(cx, cy), (cx + cw, cy + ch)], radius=15, fill=(255, 255, 255, alpha))
+        dc.rounded_rectangle(
+            [(cx, cy), (cx + cw, cy + ch)],
+            radius=40,
+            fill=(255, 255, 255, alpha),
+            outline=(238, 241, 247, min(255, alpha + 10)),
+            width=2,
+        )
     img = Image.alpha_composite(img, card)
     if flip_overlay is not None:
         img = Image.alpha_composite(img, flip_overlay)

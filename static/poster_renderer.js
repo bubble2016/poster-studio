@@ -295,6 +295,7 @@
   function drawCard(ctx, cfg, cx, cy, cw, ch, themeRgb) {
     const alpha = Math.max(0.05, Math.min(1, Number(cfg.card_opacity ?? 1)));
     const style = String(cfg.card_style || "single");
+    const cardRadius = style === "ticket" ? 28 : 40;
     ctx.save();
     ctx.shadowColor = "rgba(0,0,0,0.22)";
     ctx.shadowBlur = style === "aurora" ? 24 : 18;
@@ -314,7 +315,7 @@
     }
 
     const fill = style === "aurora" ? `rgba(242,248,255,${Math.min(0.86, alpha)})` : `rgba(255,255,255,${alpha})`;
-    fillRoundedRect(ctx, cx, cy, cw, ch, style === "ticket" ? 28 : 40, fill);
+    fillRoundedRect(ctx, cx, cy, cw, ch, cardRadius, fill);
     ctx.shadowColor = "transparent";
 
     if (style === "ticket") {
@@ -350,7 +351,7 @@
       strokeRoundedRect(ctx, cx + 8, cy + 8, cw - 16, ch - 16, 34, rgba(themeRgb, 0.45), 2);
       strokeRoundedRect(ctx, cx + 18, cy + 18, cw - 36, Math.max(80, ch * 0.32), 24, "rgba(255,255,255,0.45)", 1);
     } else {
-      strokeRoundedRect(ctx, cx, cy, cw, ch, style === "single" ? 15 : 40, "rgba(238,241,247,0.95)", 2);
+      strokeRoundedRect(ctx, cx, cy, cw, ch, cardRadius, "rgba(238,241,247,0.95)", 2);
     }
     ctx.restore();
   }
