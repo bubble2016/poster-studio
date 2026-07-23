@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>包站公告发布系统 Web</title>
-  <link rel="icon" href="/favicon.ico?v=20260305v404" type="image/x-icon" />
+  <link rel="icon" href="/favicon.ico?v=20260723v1" type="image/x-icon" />
   {% if initial_theme %}
   <style>
     :root {
@@ -54,8 +54,10 @@
       } catch (_) { }
     })();
   </script>
-  <link rel="stylesheet" href="/static/style.css?v=20260305v407" />
-  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css?v=20260723v1" />
+  <script defer src="/static/poster_text_tools.js?v=20260723v1"></script>
+  <script defer src="/static/poster_renderer.js?v=20260723v2"></script>
+  <script defer src="/static/app.js?v=20260723v3"></script>
 </head>
 
 <body class="{{ initial_bg_variant or '' }}">
@@ -66,7 +68,7 @@
     <header class="topbar">
       <div class="brand-shell">
         <div class="brand-mark-wrap" aria-hidden="true">
-          <img class="brand-mark" src="/favicon.ico" alt="" />
+          <img class="brand-mark" src="/favicon.ico?v=20260723v1" alt="" decoding="async" />
         </div>
         <div class="brand-copy">
           <p class="brand-kicker">POSTER STUDIO</p>
@@ -672,9 +674,6 @@
     </section>
   </div>
 
-  <script src="/static/poster_text_tools.js?v=20260305v405"></script>
-  <script src="/static/poster_renderer.js?v=20260305v407"></script>
-  <script src="/static/app.js?v=20260305v406"></script>
 </body>
 
 </html>

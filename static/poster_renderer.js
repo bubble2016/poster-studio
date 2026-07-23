@@ -17,6 +17,7 @@
   const PRICE_UNIT_DEFAULT = "元/吨";
   const loadedImageCache = new Map();
   const fontPromises = new Map();
+  const readyFontPresets = new Set();
 
   const DEFAULT_CONFIG = {
     shop_name: "环太平洋废纸回收打包站",
@@ -98,6 +99,14 @@
     };
   }
 
+  function systemPreviewFont(size, weight = "regular") {
+    const cssWeight = weight === "bold" ? 700 : 400;
+    const families = weight === "number"
+      ? '"Segoe UI", Arial, sans-serif'
+      : '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif';
+    return `${cssWeight} ${Math.round(size)}px ${families}`;
+  }
+
   async function loadFontFace(name, url, descriptors) {
     if (!("FontFace" in window)) return false;
     const face = new FontFace(name, `url("${url}")`, descriptors || {});
@@ -130,10 +139,18 @@
     if (fontPromises.has(preset)) return fontPromises.get(preset);
     const promise = Promise.all(getFontFaceLoads(preset)).then(async () => {
       if (document.fonts?.ready) await document.fonts.ready;
+      readyFontPresets.add(preset);
       return true;
+    }).catch((error) => {
+      fontPromises.delete(preset);
+      throw error;
     });
     fontPromises.set(preset, promise);
     return promise;
+  }
+
+  function areFontsReady(presetValue) {
+    return readyFontPresets.has(normalizeFontPreset(presetValue));
   }
 
   function loadImage(path) {
@@ -423,13 +440,14 @@
     });
   }
 
-  async function renderToCanvas(payload) {
+  async function renderToCanvas(payload, options = {}) {
     if (!isEnabled()) throw new Error("浏览器端渲染已关闭");
     if (!document.createElement("canvas").getContext) throw new Error("当前浏览器不支持 Canvas");
 
     const cfg = { ...DEFAULT_CONFIG, ...(payload?.config || {}) };
-    await ensureFonts(cfg.font_preset);
-    const posterFont = fontForPreset(cfg.font_preset);
+    const waitForFonts = options.waitForFonts !== false;
+    if (waitForFonts) await ensureFonts(cfg.font_preset);
+    const posterFont = waitForFonts ? fontForPreset(cfg.font_preset) : systemPreviewFont;
     const title = String(payload?.title || "调价通知");
     const date = String(payload?.date || "");
     const content = normalizeContentForRender(payload?.content || "");
@@ -652,7 +670,7 @@
   }
 
   async function renderToBlob(payload, options = {}) {
-    const canvas = await renderToCanvas(payload);
+    const canvas = await renderToCanvas(payload, options);
     const exportFormat = String(options.exportFormat || payload?.export_format || "PNG").toUpperCase();
     const mimeType = options.mimeType || (exportFormat === "JPEG" ? "image/jpeg" : "image/png");
     const quality = exportFormat === "JPEG" ? Math.max(0.01, Math.min(1, Number(payload?.config?.jpeg_quality || 95) / 100)) : undefined;
@@ -672,6 +690,8 @@
     CANVAS_SIZE: [CANVAS_WIDTH, CANVAS_HEIGHT],
     CLIENT_RENDER_DISABLE_KEY,
     isEnabled,
+    prepareFonts: ensureFonts,
+    areFontsReady,
     renderToCanvas,
     renderToBlob,
     renderToBlobUrl,

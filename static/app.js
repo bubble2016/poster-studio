@@ -85,6 +85,9 @@ let lastPreviewPayloadSnapshot = "";
 let previewInFlightPayloadSnapshot = "";
 let activeClientPreviewObjectUrl = "";
 let lastGeneratedResult = null;
+const clientRendererWarmupPresets = new Set();
+let priceSortableLoadPromise = null;
+let priceSortableInstance = null;
 const SETTINGS_TABS_MIN_DELTA = 2;
 const SETTINGS_TABS_HIDE_SCROLL_PX = 56;
 const SETTINGS_TABS_SHOW_SCROLL_PX = 36;
@@ -1988,6 +1991,33 @@ function isClientRendererEnabled() {
   return window.PosterRenderer.isEnabled ? window.PosterRenderer.isEnabled() : true;
 }
 
+function isClientRendererReady(fontPreset = "") {
+  if (!isClientRendererEnabled()) return false;
+  return window.PosterRenderer.areFontsReady
+    ? window.PosterRenderer.areFontsReady(fontPreset)
+    : false;
+}
+
+function shouldWarmClientRenderer() {
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (connection?.saveData) return false;
+  return !["slow-2g", "2g", "3g"].includes(String(connection?.effectiveType || "").toLowerCase());
+}
+
+function warmClientRenderer() {
+  if (!shouldWarmClientRenderer()) return;
+  if (!window.PosterRenderer?.prepareFonts) return;
+  const fontPreset = normalizeFontPreset($("fontPreset")?.value || state.config.font_preset);
+  if (clientRendererWarmupPresets.has(fontPreset) || isClientRendererReady(fontPreset)) return;
+  clientRendererWarmupPresets.add(fontPreset);
+  window.PosterRenderer.prepareFonts(fontPreset)
+    .then(() => refreshPreview({ force: true }))
+    .catch((error) => {
+      clientRendererWarmupPresets.delete(fontPreset);
+      console.warn("client_fonts_prepare_failed", error);
+    });
+}
+
 function revokeActiveClientPreviewObjectUrl() {
   if (!activeClientPreviewObjectUrl) return;
   try {
@@ -2817,6 +2847,7 @@ async function uploadFile(inputEl, key) {
   }
   const fd = new FormData();
   fd.append("file", file);
+  fd.append("asset_type", key);
   const res = await fetch("/api/upload", { method: "POST", body: fd });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "上传失败");
@@ -2831,6 +2862,7 @@ async function uploadBlob(blob, filename, key) {
   }
   const fd = new FormData();
   fd.append("file", blob, filename);
+  fd.append("asset_type", key);
   const res = await fetch("/api/upload", { method: "POST", body: fd });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "上传失败");
@@ -3086,7 +3118,10 @@ async function refreshPreview(options = {}) {
   try {
     if (isClientRendererEnabled()) {
       try {
-        const rendered = await window.PosterRenderer.renderToBlobUrl(payload, { exportFormat: "PNG" });
+        const rendered = await window.PosterRenderer.renderToBlobUrl(payload, {
+          exportFormat: "PNG",
+          waitForFonts: isClientRendererReady(payload.config.font_preset),
+        });
         if (seq !== state.previewSeq) {
           if (rendered.objectUrl) URL.revokeObjectURL(rendered.objectUrl);
           return;
@@ -3183,6 +3218,56 @@ function debounce(fn, delay = 500) {
   };
 }
 
+function loadPriceSortable(onType) {
+  if (priceSortableInstance) return Promise.resolve(priceSortableInstance);
+  if (!priceSortableLoadPromise) {
+    priceSortableLoadPromise = import("https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/+esm")
+      .then((module) => module.default || module.Sortable || module)
+      .catch((error) => {
+      priceSortableLoadPromise = null;
+      throw error;
+    });
+  }
+
+  return priceSortableLoadPromise.then((SortableCtor) => {
+    const priceTableBody = $("priceTableBody");
+    if (!priceTableBody || priceSortableInstance) return priceSortableInstance;
+    priceSortableInstance = SortableCtor.create(priceTableBody, {
+      animation: 200,
+      handle: ".price-sort-handle",
+      draggable: ".price-row-summary",
+      ghostClass: "sortable-ghost",
+      chosenClass: "sortable-chosen",
+      dragClass: "sortable-drag",
+      forceFallback: false,
+      fallbackTolerance: 2,
+      touchStartThreshold: 2,
+      delay: PRICE_SORT_TOUCH_DELAY_MS,
+      delayOnTouchOnly: true,
+      onStart: () => { vibrate(15); },
+      onEnd: (evt) => {
+        const oldIndex = evt.oldIndex;
+        const newIndex = evt.newIndex;
+        if (oldIndex === newIndex || oldIndex === undefined || newIndex === undefined) return;
+
+        if (!isMobileLayout()) {
+          syncDesktopPriceInputsToState();
+        }
+
+        const [movedItem] = state.priceEditorRows.splice(oldIndex, 1);
+        state.priceEditorRows.splice(newIndex, 0, movedItem);
+        $("contentInput").value = buildContentFromPriceEditor(state.priceEditorRows, $("priceEditorExtra").value);
+        renderPriceEditorTable();
+        updateStats();
+        onType();
+        saveGuestDraft();
+      },
+    });
+    priceTableBody.dataset.sortableReady = "true";
+    return priceSortableInstance;
+  });
+}
+
 function applyRandomBackgroundVariant() {
   const body = document.body;
   if (!body) return;
@@ -3224,49 +3309,6 @@ async function init() {
   renderPresetGrid();
   state.lastDateCheckKey = toDayKey();
 
-  const priceTableBody = $("priceTableBody");
-  if (priceTableBody && typeof Sortable !== "undefined") {
-    Sortable.create(priceTableBody, {
-      animation: 200,
-      handle: ".price-sort-handle",
-      draggable: ".price-row-summary", // Explicitly target the <tr> for both views
-      ghostClass: "sortable-ghost",
-      chosenClass: "sortable-chosen",
-      dragClass: "sortable-drag",
-      forceFallback: false,
-      fallbackTolerance: 2,
-      touchStartThreshold: 2,
-      delay: PRICE_SORT_TOUCH_DELAY_MS,
-      delayOnTouchOnly: true,
-      onStart: () => { vibrate(15); },
-      onEnd: (evt) => {
-        const oldIndex = evt.oldIndex;
-        const newIndex = evt.newIndex;
-        if (oldIndex === newIndex || oldIndex === undefined || newIndex === undefined) return;
-
-        // 1. If desktop, sync all current input values to state.priceEditorRows FIRST
-        if (!isMobileLayout()) {
-          syncDesktopPriceInputsToState();
-        }
-
-        // 2. Perform the array move on the state object
-        const [movedItem] = state.priceEditorRows.splice(oldIndex, 1);
-        state.priceEditorRows.splice(newIndex, 0, movedItem);
-
-        // 3. Immediately update hidden content (the source of truth for stats/preview)
-        $("contentInput").value = buildContentFromPriceEditor(state.priceEditorRows, $("priceEditorExtra").value);
-
-        // 4. Force a clean re-render to ensure DOM data-row-index is perfectly in sync
-        renderPriceEditorTable();
-
-        // 5. Update stats and refresh preview
-        updateStats();
-        onType();
-        saveGuestDraft();
-      },
-    });
-  }
-
   document.querySelectorAll(".theme-swatch").forEach((btn) => {
     if (btn.dataset.color) btn.style.background = btn.dataset.color;
     btn.addEventListener("click", () => {
@@ -3296,9 +3338,10 @@ async function init() {
   initEnhancedTemplateSelect("exportFormat");
   renderCardStyleGallery();
 
-  const onType = debounce(async () => {
+  const onType = debounce(async (event) => {
     updateStats();
     saveGuestDraft({ defer: true });
+    if (event?.target?.id === "fontPreset") warmClientRenderer();
     await refreshPreview();
   }, 650);
 
@@ -3985,7 +4028,10 @@ async function init() {
 
     try {
       const exportFormat = String(payload.export_format || "PNG").toUpperCase();
-      if ((exportFormat === "PNG" || exportFormat === "JPEG") && isClientRendererEnabled()) {
+      if (
+        (exportFormat === "PNG" || exportFormat === "JPEG")
+        && isClientRendererReady(payload.config.font_preset)
+      ) {
         try {
           const rendered = await window.PosterRenderer.renderToBlob(payload, { exportFormat });
           const fileName = buildClientGeneratedFileName(payload.title || "公告", exportFormat);
@@ -4046,6 +4092,7 @@ async function init() {
 
   syncEditorModeByTemplate();
   await refreshPreview();
+  loadPriceSortable(onType).catch((error) => console.warn("sortable_load_failed", error));
   syncSettingsPaneHeight();
   runPageScrollSync();
   syncTemplateManagerCollapseUi();

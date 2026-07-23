@@ -16,7 +16,7 @@ import uuid
 import zipfile
 
 from flask import Flask, Response, g, has_request_context, jsonify, render_template, request, send_file, session
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from poster_engine import (
@@ -58,6 +58,13 @@ CONFIG_PATH = os.path.join(DATA_DIR, "web_config.json")
 MAX_SAVED_OUTPUTS_PER_USER = max(1, int(os.environ.get("POSTER_MAX_SAVED_OUTPUTS_PER_USER", "3")))
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+UPLOAD_ASSET_MAX_EDGE = {
+    "bg_image_path": 2560,
+    "logo_image_path": 1200,
+    "stamp_image_path": 1200,
+    "qrcode_image_path": 1200,
+}
+UPLOAD_LOSSLESS_ASSET_TYPES = {"logo_image_path", "stamp_image_path", "qrcode_image_path"}
 PREVIEW_CACHE_TTL_SECONDS = max(30, int(os.environ.get("POSTER_PREVIEW_CACHE_TTL", "300")))
 PREVIEW_CACHE_PREFIX = os.environ.get("POSTER_PREVIEW_CACHE_PREFIX", "poster:preview")
 PREVIEW_CACHE_MAX_LOCAL_ITEMS = max(16, int(os.environ.get("POSTER_PREVIEW_CACHE_LOCAL_MAX", "128")))
@@ -205,6 +212,13 @@ def _append_request_id(resp):
     req_id = getattr(g, "request_id", "")
     if req_id:
         resp.headers["X-Request-Id"] = req_id
+    if request.path.startswith("/static/") or request.path == "/favicon.ico":
+        if request.args.get("v"):
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            resp.headers["Cache-Control"] = "public, max-age=3600"
+    elif request.path in {"/", "/admin", "/terms", "/privacy"}:
+        resp.headers["Cache-Control"] = "no-cache"
     return resp
 
 
@@ -447,6 +461,55 @@ def _validate_uploaded_image(path):
     if width * height > MAX_UPLOAD_IMAGE_PIXELS:
         return False, f"图片像素过大，最大支持 {MAX_UPLOAD_IMAGE_PIXELS} 像素"
     return True, ""
+
+
+def _optimize_uploaded_image(path, asset_type=""):
+    asset_key = str(asset_type or "").strip()
+    max_edge = UPLOAD_ASSET_MAX_EDGE.get(asset_key, 2560)
+    lossless = asset_key in UPLOAD_LOSSLESS_ASSET_TYPES
+    source_size = os.path.getsize(path)
+    source_root, _ = os.path.splitext(path)
+    optimized_path = f"{source_root}.webp"
+    fd, temp_path = tempfile.mkstemp(prefix=".optimized-", suffix=".webp", dir=os.path.dirname(path))
+    os.close(fd)
+    try:
+        with Image.open(path) as source:
+            source.seek(0)
+            image = ImageOps.exif_transpose(source)
+            width, height = image.size
+            resized = max(width, height) > max_edge
+            if resized:
+                image = image.copy()
+                image.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+
+            has_alpha = image.mode in {"RGBA", "LA"} or (
+                image.mode == "P" and "transparency" in image.info
+            )
+            image = image.convert("RGBA" if has_alpha else "RGB")
+            save_options = {"format": "WEBP", "method": 4}
+            if lossless:
+                save_options.update({"lossless": True, "quality": 90})
+            else:
+                save_options.update({"lossless": False, "quality": 86})
+            image.save(temp_path, **save_options)
+
+        optimized_size = os.path.getsize(temp_path)
+        if not resized and optimized_size >= source_size:
+            os.remove(temp_path)
+            return path
+
+        os.replace(temp_path, optimized_path)
+        if os.path.abspath(optimized_path) != os.path.abspath(path) and os.path.isfile(path):
+            os.remove(path)
+        return optimized_path
+    except Exception:
+        try:
+            if os.path.isfile(temp_path):
+                os.remove(temp_path)
+        except Exception:
+            pass
+        _log_exception("upload.image_optimize_failed", asset_type=asset_key)
+        return path
 
 
 def _record_output_owner(relpath, user_id):
@@ -1206,6 +1269,9 @@ def api_upload():
         return jsonify({"error": "仅支持 PNG/JPG/JPEG/WEBP"}), 400
     if f.mimetype and not str(f.mimetype).lower().startswith("image/"):
         return jsonify({"error": "仅支持图片文件"}), 400
+    asset_type = str(request.form.get("asset_type") or "").strip()
+    if asset_type and asset_type not in UPLOAD_ASSET_MAX_EDGE:
+        return jsonify({"error": "图片用途无效"}), 400
     filename = f"{uuid.uuid4().hex}{ext}"
     path = os.path.join(UPLOAD_DIR, filename)
     f.save(path)
@@ -1216,6 +1282,7 @@ def api_upload():
         except Exception:
             _log_exception("upload.cleanup_failed", path=path)
         return jsonify({"error": msg}), 400
+    path = _optimize_uploaded_image(path, asset_type)
     return jsonify({"path": _public_path(path)})
 
 
